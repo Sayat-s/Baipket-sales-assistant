@@ -1,0 +1,4 @@
+.env
+*.env
+bots/assistant/.env
+bots/assistant/tmp/

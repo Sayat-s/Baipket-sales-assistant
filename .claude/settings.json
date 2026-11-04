@@ -1,0 +1,5 @@
+{
+  "permissions": {
+    "allow": ["Bash(bots/assistant/send.sh:*)", "Bash(./bots/assistant/send.sh:*)"]
+  }
+}
