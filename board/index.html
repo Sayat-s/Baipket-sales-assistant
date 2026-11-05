@@ -1,0 +1,249 @@
+<title>Доска задач Baipket</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap">
+<style>
+/* Макет: узкая колонка как в Apple Reminders; сверху этапы и метки, ниже задачи по дням, шторка справа/снизу. */
+:root{
+  --bg:#f6f5f1; --surface:#ffffff; --fg:#23211b; --muted:#7b776b; --line:#e7e4da;
+  --accent:#e9b400; --accent-ink:#2b2200; --ok:#2f9e5b; --bad:#d6403a; --chip:#eeece4;
+  --font:'Onest',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#17160f; --surface:#211f16; --fg:#f1eee2; --muted:#9d9886; --line:#33301f; --accent:#f2c200; --accent-ink:#241c00; --ok:#4cc27d; --bad:#ff6b63; --chip:#2b2919; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#17160f; --surface:#211f16; --fg:#f1eee2; --muted:#9d9886; --line:#33301f; --accent:#f2c200; --accent-ink:#241c00; --ok:#4cc27d; --bad:#ff6b63; --chip:#2b2919; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 var(--font);padding-block:12px 96px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+h1{font-size:22px;margin:4px 0 0;font-weight:700;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:13px}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--chip);padding:4px;border-radius:12px}
+.tab{border:0;background:none;color:var(--muted);font:600 13px var(--font);padding:8px 2px;border-radius:9px;cursor:pointer}
+.tab b{font-weight:600;opacity:.7;margin-left:3px}
+.tab[aria-selected=true]{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.labels{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.chip{border:1px solid var(--line);background:var(--surface);color:var(--fg);font:500 13px var(--font);padding:5px 12px;border-radius:99px;cursor:pointer;white-space:nowrap}
+.chip[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.chip.edit{color:var(--muted);border-style:dashed}
+.grp{display:flex;flex-direction:column;gap:6px}
+.grp h2{margin:8px 0 0;font:600 12px var(--font);text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.grp.over h2{color:var(--bad)}
+.row{display:flex;gap:12px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 12px}
+.row.ev{background:transparent;border-style:dashed}
+.chk{flex:none;width:24px;height:24px;border-radius:50%;border:2px solid var(--muted);background:none;cursor:pointer;margin-top:1px;display:grid;place-items:center;color:transparent;padding:0}
+.chk:hover{border-color:var(--accent)}
+.chk.on{background:var(--ok);border-color:var(--ok);color:#fff}
+.main{flex:1;min-width:0;cursor:pointer}
+.t{overflow-wrap:anywhere;font-weight:500}
+.done .t{text-decoration:line-through;color:var(--muted)}
+.meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12.5px;color:var(--muted);margin-top:2px}
+.meta .nx{color:var(--fg)}
+.meta .red{color:var(--bad);font-weight:600}
+.empty{text-align:center;color:var(--muted);padding:36px 12px;border:1px dashed var(--line);border-radius:14px}
+.fab{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(20px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border-radius:50%;border:0;background:var(--accent);color:var(--accent-ink);font:400 32px/1 var(--font);cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+.quick{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding:12px max(16px,env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;gap:8px;z-index:20}
+.quick input{flex:1;min-width:0}
+input,textarea,select{font:15px var(--font);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:9px 11px;width:100%}
+textarea{resize:vertical;min-height:70px}
+button.pri{background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:9px 14px;font:600 14px var(--font);cursor:pointer}
+button.sec{background:var(--chip);color:var(--fg);border:0;border-radius:10px;padding:8px 12px;font:500 13px var(--font);cursor:pointer}
+button.danger{color:var(--bad)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:30}
+.sheet{position:fixed;z-index:31;left:0;right:0;bottom:0;max-height:92%;overflow:auto;background:var(--surface);border-radius:18px 18px 0 0;padding:16px max(16px,env(safe-area-inset-right,0px)) calc(20px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:12px;max-width:640px;margin:0 auto}
+.sheet label{font:600 12px var(--font);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:flex;flex-direction:column;gap:5px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.steps{display:flex;flex-direction:column;gap:6px}
+.step{display:flex;align-items:center;gap:8px}
+.step input[type=checkbox]{width:20px;height:20px;flex:none;accent-color:var(--accent)}
+.step span{flex:1;min-width:0;overflow-wrap:anywhere}
+.step.d span{text-decoration:line-through;color:var(--muted)}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:12px;display:flex;gap:12px;align-items:center;z-index:40;font-size:14px}
+.toast button{background:none;border:0;color:var(--accent);font:600 14px var(--font);cursor:pointer}
+.note{font-size:12.5px;color:var(--muted)}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:0}}}
+</style>
+
+<div class="wrap">
+  <div><h1>Доска задач</h1><div class="sub" id="sub">Загрузка…</div></div>
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <div class="labels" id="labels"></div>
+  <div id="list"></div>
+</div>
+<button class="fab" id="fab" aria-label="Добавить задачу">+</button>
+<div id="layer"></div>
+
+<script>
+(function(){
+const STAGES=[['todo','Сделать'],['doing','В работе'],['wait','Ждём'],['done','Готово']];
+const DEF_LABELS=['Работа','Семья','Дом'];
+let db=null, tasks=[], events=[], labels=DEF_LABELS.slice(), stage='todo', label='', openId=null, quick=false, canWrite=true, undoT=null;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const today=()=>iso(new Date());
+const addDays=(n)=>{const d=new Date();d.setDate(d.getDate()+n);return iso(d)};
+const WD=['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+const MON=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+function fmt(d){const [y,m,dd]=d.split('-').map(Number);return dd+' '+MON[m-1]}
+function bucket(due){
+  if(!due) return ['9','Без срока'];
+  const t=today();
+  if(due<t) return ['0','Просрочено'];
+  if(due===t) return ['1','Сегодня'];
+  if(due===addDays(1)) return ['2','Завтра'];
+  if(due<=addDays(7)){const d=new Date(due+'T12:00:00');const n=WD[d.getDay()];return ['3'+due,n[0].toUpperCase()+n.slice(1)+', '+fmt(due)]}
+  return ['8','Позже'];
+}
+const tget=id=>tasks.find(t=>t.id===id);
+async function save(id,patch){ if(!db||!canWrite) return; try{await db.doc('tasks/'+id).update(patch)}catch(e){console.error(e)} }
+async function create(title){
+  title=title.trim(); if(!title||!db) return;
+  await db.collection('tasks').add({title,desc:'',label:label||'',stage:stage==='done'?'todo':stage,next:'',steps:[],who:'',due:'',notes:'',created:Date.now(),doneAt:0});
+}
+function toast(msg,undo){
+  clearTimeout(undoT); const old=document.querySelector('.toast'); if(old) old.remove();
+  const el=document.createElement('div'); el.className='toast'; el.setAttribute('role','status');
+  el.innerHTML='<span>'+esc(msg)+'</span>'+(undo?'<button>Отменить</button>':'');
+  if(undo) el.querySelector('button').onclick=()=>{undo();el.remove()};
+  document.body.appendChild(el); undoT=setTimeout(()=>el.remove(),5000);
+}
+function toggleDone(t){
+  const was=t.stage, back=was==='done'?'todo':was;
+  if(was==='done'){save(t.id,{stage:'todo',doneAt:0});return}
+  save(t.id,{stage:'done',doneAt:Date.now()});
+  toast('Готово: '+t.title,()=>save(t.id,{stage:back,doneAt:0}));
+}
+
+function renderTabs(){
+  $('tabs').innerHTML=STAGES.map(([k,n])=>{
+    const c=tasks.filter(t=>t.stage===k&&(!label||t.label===label)).length;
+    return `<button class="tab" role="tab" aria-selected="${k===stage}" data-s="${k}">${n}<b>${c}</b></button>`}).join('');
+  $('tabs').querySelectorAll('.tab').forEach(b=>b.onclick=()=>{stage=b.dataset.s;render()});
+  $('labels').innerHTML='<button class="chip" aria-pressed="'+(!label)+'" data-l="">Все</button>'+
+    labels.map(l=>`<button class="chip" aria-pressed="${l===label}" data-l="${esc(l)}">${esc(l)}</button>`).join('')+
+    '<button class="chip edit" id="editL">Метки</button>';
+  $('labels').querySelectorAll('.chip[data-l]').forEach(b=>b.onclick=()=>{label=b.dataset.l;render()});
+  $('editL').onclick=openLabels;
+}
+function rowHtml(t){
+  const nx=t.next?`<span class="nx">Дальше: ${esc(t.next)}</span>`:'';
+  const steps=(t.steps||[]); const sd=steps.filter(s=>s.d).length;
+  return `<div class="row ${t.stage==='done'?'done':''}" data-id="${t.id}">
+    <button class="chk ${t.stage==='done'?'on':''}" aria-label="${t.stage==='done'?'Вернуть в работу':'Отметить сделанным'}" data-c="${t.id}">✓</button>
+    <div class="main" data-o="${t.id}" tabindex="0"><div class="t">${esc(t.title)}</div>
+      <div class="meta">${t.label?`<span>${esc(t.label)}</span>`:''}${t.due?`<span class="${t.due<today()&&t.stage!=='done'?'red':''}">${fmt(t.due)}</span>`:''}${t.who?`<span>с ${esc(t.who)}</span>`:''}${steps.length?`<span>${sd}/${steps.length} шагов</span>`:''}${nx}</div></div></div>`;
+}
+function evHtml(e){
+  const tm=e.time?e.time+' ':'';
+  return `<div class="row ev"><span aria-hidden="true" style="width:24px;text-align:center">📅</span><div class="main" style="cursor:default"><div class="t">${esc(tm+e.title)}</div><div class="meta"><span>Google Календарь</span></div></div></div>`;
+}
+function renderList(){
+  let items=tasks.filter(t=>t.stage===stage&&(!label||t.label===label));
+  const groups={};
+  if(stage==='done'){
+    items.sort((a,b)=>(b.doneAt||0)-(a.doneAt||0)); groups['0']={n:'Недавно закрытые',i:items,e:[]};
+  }else{
+    items.forEach(t=>{const [k,n]=bucket(t.due);(groups[k]=groups[k]||{n,i:[],e:[]}).i.push(t)});
+    events.forEach(e=>{if(!e.date||e.date<today())return;const [k,n]=bucket(e.date);(groups[k]=groups[k]||{n,i:[],e:[]}).e.push(e)});
+  }
+  const keys=Object.keys(groups).sort();
+  if(!keys.length){ $('list').innerHTML=`<div class="empty">${tasks.length?'В этом этапе пока пусто.':'Задач пока нет. Нажмите «+» или скажите ассистенту, что добавить.'}</div>`; return }
+  $('list').innerHTML=keys.map(k=>{const g=groups[k];
+    g.e.sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+    return `<section class="grp ${k==='0'&&stage!=='done'?'over':''}"><h2>${esc(g.n)}</h2>${g.e.map(evHtml).join('')}${g.i.map(rowHtml).join('')}</section>`}).join('');
+  $('list').querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{const t=tget(b.dataset.c);if(t)toggleDone(t)});
+  $('list').querySelectorAll('[data-o]').forEach(b=>{b.onclick=()=>{openId=b.dataset.o;renderLayer()};b.onkeydown=e=>{if(e.key==='Enter'){openId=b.dataset.o;renderLayer()}}});
+}
+function stageSel(v){return STAGES.map(([k,n])=>`<option value="${k}" ${k===v?'selected':''}>${n}</option>`).join('')}
+function renderLayer(){
+  const L=$('layer');
+  if(quick){
+    L.innerHTML='<div class="quick"><input id="qi" placeholder="Новая задача" autocomplete="off" enterkeyhint="done"><button class="pri" id="qa">Добавить</button><button class="sec" id="qx">×</button></div>';
+    const go=async()=>{const v=$('qi').value;if(!v.trim())return;$('qi').value='';await create(v);$('qi').focus()};
+    $('qa').onclick=go; $('qi').onkeydown=e=>{if(e.key==='Enter')go()}; $('qx').onclick=()=>{quick=false;renderLayer()}; $('qi').focus(); $('fab').hidden=true; return;
+  }
+  $('fab').hidden=false;
+  const t=openId&&tget(openId);
+  if(!t){ if(!L.querySelector('[data-keep]')) L.innerHTML=''; return }
+  if(L.querySelector('.sheet[data-id="'+t.id+'"]')) return; // не перерисовываем, пока человек печатает
+  const steps=t.steps||[];
+  L.innerHTML=`<div class="scrim" id="sc"></div><div class="sheet" data-id="${t.id}" role="dialog" aria-label="Задача">
+    <input id="f-title" value="${esc(t.title)}" style="font-weight:600;font-size:17px">
+    <textarea id="f-desc" placeholder="Описание">${esc(t.desc)}</textarea>
+    <div class="two"><label>Метка<select id="f-label"><option value="">Без метки</option>${labels.map(l=>`<option ${l===t.label?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
+    <label>Этап<select id="f-stage">${stageSel(t.stage)}</select></label></div>
+    <label>Следующий шаг<input id="f-next" value="${esc(t.next)}" placeholder="Что сделать прямо сейчас"></label>
+    <div class="bar"><button class="pri" id="nx-done">Сделано, дальше</button><button class="sec" id="ai">Подсказать шаги</button></div>
+    <div class="steps" id="steps">${steps.map((s,i)=>`<div class="step ${s.d?'d':''}"><input type="checkbox" data-si="${i}" ${s.d?'checked':''} aria-label="Шаг выполнен"><span>${esc(s.t)}</span><button class="sec" data-sx="${i}" aria-label="Удалить шаг">×</button></div>`).join('')}</div>
+    <div class="bar"><input id="f-step" placeholder="Добавить шаг" style="flex:1;min-width:0"><button class="sec" id="st-add">+</button></div>
+    <div class="two"><label>С кем<input id="f-who" value="${esc(t.who)}"></label><label>Срок<input id="f-due" type="date" value="${esc(t.due)}"></label></div>
+    <label>Заметки<textarea id="f-notes">${esc(t.notes)}</textarea></label>
+    <div class="bar" style="justify-content:space-between"><button class="sec danger" id="del">Удалить</button><button class="pri" id="close">Закрыть</button></div>
+    <div class="note" id="aimsg"></div></div>`;
+  const id=t.id, g=x=>$(x);
+  const close=()=>{openId=null;L.innerHTML=''};
+  g('sc').onclick=close; g('close').onclick=close;
+  [['f-title','title'],['f-desc','desc'],['f-next','next'],['f-who','who'],['f-notes','notes'],['f-due','due'],['f-label','label'],['f-stage','stage']].forEach(([el,k])=>{
+    g(el).onchange=()=>{const v=g(el).value;const p={[k]:v};if(k==='stage')p.doneAt=v==='done'?Date.now():0;if(k==='title'&&!v.trim())return;save(id,p)}});
+  const setSteps=a=>{ save(id,{steps:a}); const x=tget(id); if(x) x.steps=a; L.innerHTML=''; renderLayer(); };
+  g('st-add').onclick=()=>{const v=g('f-step').value.trim();if(v)setSteps([...(tget(id).steps||[]),{t:v,d:false}])};
+  g('f-step').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();g('st-add').click()}};
+  L.querySelectorAll('[data-si]').forEach(c=>c.onchange=()=>{const a=(tget(id).steps||[]).map((s,i)=>i==c.dataset.si?{...s,d:c.checked}:s);setSteps(a)});
+  L.querySelectorAll('[data-sx]').forEach(b=>b.onclick=()=>setSteps((tget(id).steps||[]).filter((_,i)=>i!=b.dataset.sx)));
+  g('nx-done').onclick=()=>{
+    const cur=tget(id); const a=(cur.steps||[]).slice(); const i=a.findIndex(s=>!s.d);
+    let nxt=''; if(i>=0){a[i]={...a[i],d:true}; const j=a.findIndex(s=>!s.d); nxt=j>=0?a[j].t:''}
+    save(id,{steps:a,next:nxt}); const x=tget(id); x.steps=a; x.next=nxt; L.innerHTML=''; renderLayer();
+  };
+  g('del').onclick=async()=>{ if(g('del').dataset.sure!=='1'){g('del').dataset.sure='1';g('del').textContent='Точно удалить?';return} try{await db.doc('tasks/'+id).delete()}catch(e){} close() };
+  g('ai').onclick=async()=>{
+    const m=g('aimsg'); m.textContent='Думаю…';
+    try{
+      const sample=await claude.use('sample'); if(!sample){m.textContent='Подсказки недоступны в этом просмотре.';return}
+      const cur=tget(id);
+      const r=await sample.json('Задача: «'+cur.title+'». Описание: '+(cur.desc||'нет')+'. Предложи 3–6 коротких конкретных шагов по-русски. Ответ строго JSON: {"steps":["...",...]}');
+      const add=(r&&r.steps||[]).filter(s=>typeof s==='string'&&s.trim()).map(s=>({t:s.trim(),d:false}));
+      if(!add.length){m.textContent='Не получилось, попробуйте ещё раз.';return}
+      const a=[...(cur.steps||[]),...add]; const nxt=cur.next||add[0].t;
+      save(id,{steps:a,next:nxt}); cur.steps=a; cur.next=nxt; L.innerHTML=''; renderLayer();
+    }catch(e){m.textContent='Не получилось: '+(e&&e.message||'ошибка')}
+  };
+}
+function openLabels(){
+  const L=$('layer');
+  L.innerHTML=`<div class="scrim" id="sc"></div><div class="sheet" data-keep="1" role="dialog" aria-label="Метки"><b>Метки</b>
+    <div class="steps">${labels.map((l,i)=>`<div class="step"><input data-li="${i}" value="${esc(l)}" aria-label="Название метки"><button class="sec" data-lx="${i}" aria-label="Удалить метку">×</button></div>`).join('')}</div>
+    <div class="bar"><input id="nl" placeholder="Новая метка" style="flex:1;min-width:0"><button class="sec" id="nla">+</button></div>
+    <div class="bar" style="justify-content:flex-end"><button class="pri" id="lc">Готово</button></div></div>`;
+  const put=async(a)=>{labels=a;try{await db.doc('meta/labels').set({list:a})}catch(e){} renderTabs();};
+  $('sc').onclick=$('lc').onclick=()=>{L.innerHTML=''};
+  L.querySelectorAll('[data-li]').forEach(i=>i.onchange=async()=>{
+    const old=labels[i.dataset.li], nu=i.value.trim(); if(!nu||nu===old)return;
+    await put(labels.map((l,k)=>k==i.dataset.li?nu:l));
+    for(const t of tasks.filter(t=>t.label===old)) await save(t.id,{label:nu}); if(label===old) label=nu;});
+  L.querySelectorAll('[data-lx]').forEach(b=>b.onclick=async()=>{const a=labels.filter((_,k)=>k!=b.dataset.lx);await put(a);openLabels()});
+  $('nla').onclick=async()=>{const v=$('nl').value.trim();if(v&&!labels.includes(v)){await put([...labels,v]);openLabels()}};
+  $('nl').onkeydown=e=>{if(e.key==='Enter')$('nla').click()};
+}
+function render(){ renderTabs(); renderList(); renderLayer();
+  const open=tasks.filter(t=>t.stage!=='done').length, od=tasks.filter(t=>t.stage!=='done'&&t.due&&t.due<today()).length;
+  $('sub').textContent=open+' в работе'+(od?' · просрочено '+od:''); }
+$('fab').onclick=()=>{quick=true;renderLayer()};
+
+async function boot(){
+  const start=Date.now();
+  let to=setTimeout(()=>{$('sub').textContent='База данных пока не отвечает'},10000);
+  try{ db=await claude.use('db'); }catch(e){ db=null }
+  if(!db){ clearTimeout(to); $('sub').textContent='Нужен вход в аккаунт, чтобы видеть задачи'; $('list').innerHTML='<div class="empty">Откройте доску, войдя в Claude.</div>'; $('fab').hidden=true; return }
+  try{ const u=await claude.use('user'); if(u&&u.can){const w=u.can('data.write'); if(w===false) canWrite=false} }catch(e){}
+  if(!canWrite){$('fab').hidden=true}
+  db.collection('tasks').onSnapshot(s=>{clearTimeout(to);tasks=s.docs.map(d=>({id:d.id,...d.data()}));render()},e=>{$('sub').textContent='Не удалось загрузить задачи'});
+  db.collection('events').onSnapshot(s=>{events=s.docs.map(d=>({id:d.id,...d.data()}));render()},()=>{});
+  db.doc('meta/labels').onSnapshot(s=>{ if(s.exists&&Array.isArray(s.data().list)) labels=s.data().list; renderTabs()},()=>{});
+}
+render(); boot();
+})();
+</script>
