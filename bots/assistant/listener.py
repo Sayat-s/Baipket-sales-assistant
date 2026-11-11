@@ -59,7 +59,7 @@ def handle(u):
     is_owner = frm.get("id") == OWNER
     place = "жеке чат" if is_private else (chat.get("title") or "топ")
     who = " ".join(x for x in (frm.get("first_name"), frm.get("last_name")) if x) or frm.get("username") or "?"
-    base = {"ts": dt.datetime.utcnow().isoformat() + "Z", "update_id": u["update_id"], "place": place, "from": who, "date": m.get("date")}
+    base = {"ts": dt.datetime.now(dt.timezone.utc).isoformat(), "update_id": u["update_id"], "place": place, "from": who, "date": m.get("date")}
 
     if is_private and is_owner:
         low = text.lower()
@@ -79,6 +79,10 @@ def handle(u):
             v = m.get("voice") or m.get("audio") or m.get("video_note")
             save({**base, "kind": "voice", "file_id": v.get("file_id"), "duration": v.get("duration")})
             say("🎙 <b>Дауыстық қабылдадым.</b>\nРасшифровка жасап, тапсырма етіп доскаға қосамын.")
+            return
+        if text and re.search(r"оқыдым|окыдым|оқып болдым|прочитал", low) and re.search(r"таң|бесін|екінті|шам|ақшам|құфтан|намаз|фаджр|зухр|аср|магриб|иша", low):
+            save({**base, "kind": "habit", "habit": "namaz", "text": text})
+            say(f"🤲 <b>Қабылдадым:</b> {html.escape(text[:200])}\n<i>Намаз белгіленді, апталық статистикаға қосамын.</i>")
             return
         if text:
             body = re.sub(r"^/tapsyrma(@\w+)?\s*", "", text, flags=re.I)
