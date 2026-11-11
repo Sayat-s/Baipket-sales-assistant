@@ -85,3 +85,28 @@ function setupTriggers() {
   ScriptApp.newTrigger('dailyReport').timeBased().everyDays(1).atHour(9).inTimezone('Asia/Almaty').create();
   say_('✅ Сторож ботов включён: проверка каждые 30 минут и сводка в 09:00.');
 }
+
+// Разово: покажет, ГДЕ работает каждый бот (по адресу webhook) и нет ли ошибок.
+// Токены не показываются; от адреса остаётся только домен.
+function reportHosting() {
+  const props = PropertiesService.getScriptProperties();
+  const rows = [];
+  WATCH.forEach(function (b) {
+    const token = props.getProperty(b.prop);
+    if (!token) return;
+    const me = wdCall_(token, 'getMe');
+    if (!me.ok) { rows.push('🔴 <b>' + esc_(b.name) + '</b>\nтокен недействителен или бот удалён'); return; }
+    const w = (wdCall_(token, 'getWebhookInfo').result) || {};
+    let where;
+    if (w.url) {
+      const m = String(w.url).match(/^https?:\/\/([^\/?#]+)/);
+      where = 'webhook: ' + (m ? m[1] : '?');
+    } else {
+      where = 'webhook нет (бот сам опрашивает Telegram, значит где-то запущен процесс)';
+    }
+    rows.push('<b>' + esc_(b.name) + '</b> (@' + esc_(me.result.username) + ')\n' + esc_(where) +
+      '\nнеобработанных: ' + (w.pending_update_count || 0) +
+      (w.last_error_message ? '\nпоследняя ошибка: ' + esc_(w.last_error_message) : ''));
+  });
+  say_(rows.length ? '<b>Где работают боты</b>\n\n' + rows.join('\n\n') : 'Токены ботов не добавлены.');
+}
