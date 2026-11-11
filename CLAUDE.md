@@ -38,3 +38,10 @@ title, desc, label, stage (todo|doing|wait|done), next, steps [{t,d}], who, due 
 - Пока включён webhook, getUpdates НЕ работает (ошибка 409). Не вызывай getUpdates и не запускай listener.py (он устарел, остался как запасной вариант: сначала deleteWebhook).
 - Ассистент читает лист Inbox через Google Drive (read_file_content) и переносит на доску: task -> `tasks/tg-{update_id}` (если документа ещё нет), money -> `money/{YYYY-MM-DD}`, voice -> расшифровать (getFile) и добавить задачу, habit -> учитывать в статистике привычек. Дедупликация: пропускать update_id, для которых уже есть `tasks/tg-{update_id}`.
 - Секреты (BOT_TOKEN, CHAT_ID, SECRET) лежат в «Свойствах скрипта» Apps Script; локально токен в bots/assistant/.env (не в git). SECRET добавлен в URL webhook как ?k=.
+
+## Архитектура ботов (актуально)
+- Webhook Telegram -> Cloudflare Worker `tg-relay` (https://tg-relay.yk2cmjp7vm.workers.dev/<SECRET>/assist | /keis, код bots/cloudflare/relay.js) мгновенно отвечает 200 и пересылает запрос в Apps Script (?k=SECRET[&bot=keis]). Это убирает повторы Telegram из-за «302 Found».
+- Apps Script (Code.gs: doPost-роутер и @assistsayatbot; KeisBot.gs: Бот Кейс, читает cases.csv с Диска по CASES_FILE_ID, поиск без ИИ; Watchdog.gs: сторож ботов по TOKEN_* и сводка 09:00).
+- Бот Кейс отвечает в группах только на упоминание @casebaipbot, ответ на его сообщение или «ещё»; в личке на любой текст.
+- Отправка в Telegram из Apps Script: payload только строками (chat_id строкой, без undefined), иначе «chat not found».
+- ОКК БОТ и baipket-op-bot (ОП ассистент) работают на Mac пользователя (polling); для 24/7 нужен сервер, ориентир $4-6/мес (в README ОП-ассистента есть Docker).

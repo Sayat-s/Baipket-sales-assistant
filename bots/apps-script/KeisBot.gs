@@ -265,7 +265,7 @@ function keisHandle_(u) {
   try {
     const t0 = Date.now();
     keisHandleInner_(u);
-    keisLog_({ ok: true, ms: Date.now() - t0, text: String((u.message && u.message.text) || '').slice(0, 30) });
+    if (Date.now() - t0 > 20000) keisLog_({ slow_ms: Date.now() - t0 }); // тек өте баяу болса жазамыз
   } catch (err) { keisLog_({ err: String(err) }); }
 }
 function keisHandleInner_(u) {
