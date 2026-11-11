@@ -37,7 +37,11 @@ case "$cmd" in
       -d disable_web_page_preview=true --data-urlencode text="${1:?нужен текст}" ;;
   voice)
     mkdir -p "$DIR/tmp"; mp3="$DIR/tmp/v$$.mp3"; ogg="$DIR/tmp/v$$.ogg"
-    python3 -m edge_tts --voice "$VOICE" --text "${1:?нужен текст}" --write-media "$mp3"
+    VOICE="$VOICE" TEXT="${1:?нужен текст}" OUT="$mp3" python3 -I -c '
+import os, asyncio, ssl, edge_tts
+kw = {}
+if os.environ.get("HTTPS_PROXY"): kw["proxy"] = os.environ["HTTPS_PROXY"]
+asyncio.run(edge_tts.Communicate(os.environ["TEXT"], os.environ["VOICE"], **kw).save(os.environ["OUT"]))' 
     ffmpeg -loglevel error -y -i "$mp3" -c:a libopus "$ogg"
     curl -sS "$API/sendVoice" -F chat_id="$CHAT_ID" -F voice=@"$ogg"
     rm -f "$mp3" "$ogg" ;;
