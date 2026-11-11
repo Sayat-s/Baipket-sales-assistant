@@ -322,11 +322,34 @@ function keisCheck() {
   say_(msg);
 }
 // 2) Telegram-ды осы скриптке қосады (webhook). Алдымен Mac-тағы ескі ботты тоқтатыңыз.
+// Ескерту: редактордан іске қосқанда ScriptApp.getService().getUrl() "/dev" мекенжайын қайтарады, ол жұмыс істемейді.
+// Сондықтан тұрақты "/exec" мекенжайы қолданылады (WEBAPP_URL свойствосы болса, соны алады).
+const KEIS_EXEC_URL = 'https://script.google.com/macros/s/AKfycbyIP-sAIHtAnQ2PlvS2Irs31ubBodosqpYOckIBwsODYTmksEWH-H-CveX41GiYE1y9/exec';
 function keisSetWebhook() {
   const p = PropertiesService.getScriptProperties();
-  const url = ScriptApp.getService().getUrl() + '?k=' + p.getProperty('SECRET') + '&bot=keis';
+  const base = p.getProperty('WEBAPP_URL') || KEIS_EXEC_URL;
+  if (!/\/exec$/.test(base)) { say_('🔴 Webhook орнатылмады: мекенжай /exec-пен аяқталуы керек.'); return; }
+  const url = base + '?k=' + p.getProperty('SECRET') + '&bot=keis';
   const r = keisTg_('setWebhook', { url: url, allowed_updates: JSON.stringify(['message']) });
   say_('Бот Кейс webhook: ' + keisHtml_(JSON.parse(r.getContentText()).description || 'ok'));
+}
+// 2б) Webhook қайда бағытталғанын көрсетеді (токенсіз): /exec болуы керек.
+function keisWebhookInfo() {
+  const w = JSON.parse(keisTg_('getWebhookInfo', {}).getContentText()).result || {};
+  const m = String(w.url || '').match(/^https?:\/\/([^\/?#]+)(\/[^?#]*)?/);
+  const host = m ? m[1] : 'жоқ';
+  const last = m && m[2] ? m[2].split('/').pop() : '';
+  const isBot = String(w.url || '').indexOf('bot=keis') >= 0;
+  say_('<b>Бот Кейс: webhook</b>\nДомен: ' + keisHtml_(host) + '\nСоңы: ' + keisHtml_(last) + (last === 'exec' ? ' ✅' : ' 🔴 (exec болуы керек)') +
+    '\nbot=keis: ' + (isBot ? 'иә' : 'жоқ') + '\nКезекте: ' + (w.pending_update_count || 0) +
+    (w.last_error_message ? '\nСоңғы қате: ' + keisHtml_(w.last_error_message) : ''));
+}
+// 2в) Іздеу жұмысын тексереді (контактсыз, тек сандар).
+function keisSelfTest() {
+  const cases = keisLoadCases_();
+  const q = ['товарка', 'общепит', 'медицина', 'видеограф'];
+  const rows = q.map(function (x) { const r = keisFreeSearch_(cases, x, 0); return keisHtml_(x) + ': ' + r[1]; });
+  say_('<b>Бот Кейс: сынақ</b>\nКейс саны: <b>' + cases.length + '</b>\n' + rows.join('\n'));
 }
 // 3) Қайтару жолы: webhook-ты өшіреді (Mac-та ескі боттың polling режимін қайта қосу керек болса).
 function keisDeleteWebhook() {
