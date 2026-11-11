@@ -47,10 +47,10 @@ asyncio.run(edge_tts.Communicate(os.environ["TEXT"], os.environ["VOICE"], **kw).
     rm -f "$mp3" "$ogg" ;;
   photo)
     curl -sS "$API/sendPhoto" -F chat_id="$CHAT_ID" -F photo=@"${1:?нужен файл}" \
-      -F parse_mode=HTML -F caption="${2:-}" ;;
+      --form-string parse_mode=HTML --form-string caption="${2:-}" ;;
   doc)
     curl -sS "$API/sendDocument" -F chat_id="$CHAT_ID" -F document=@"${1:?нужен файл}" \
-      -F parse_mode=HTML -F caption="${2:-}" ;;
+      --form-string parse_mode=HTML --form-string caption="${2:-}" ;;
   *) echo "Команды: text | voice | photo | doc | chatid" >&2; exit 2 ;;
 esac
 echo
