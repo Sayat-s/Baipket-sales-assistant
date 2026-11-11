@@ -10,10 +10,11 @@ function doPost(e) {
   if (((e && e.parameter) || {}).k !== P().getProperty('SECRET')) return ok_();
   try {
     const u = JSON.parse(e.postData.contents);
+    const bot = (e.parameter || {}).bot || '';
     const cache = CacheService.getScriptCache();
-    if (cache.get('u' + u.update_id)) return ok_();
-    cache.put('u' + u.update_id, '1', 21600);
-    handle_(u);
+    if (cache.get('u' + bot + u.update_id)) return ok_();
+    cache.put('u' + bot + u.update_id, '1', 21600);
+    if (bot === 'keis') keisHandle_(u); else handle_(u);
   } catch (err) { log_('error', String(err)); }
   return ok_();
 }
