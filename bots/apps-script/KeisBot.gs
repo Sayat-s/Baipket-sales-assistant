@@ -383,3 +383,15 @@ function keisDeleteWebhook() {
   const r = keisTg_('deleteWebhook', { drop_pending_updates: false });
   say_('Бот Кейс webhook өшірілді: ' + keisHtml_(JSON.parse(r.getContentText()).description || 'ok'));
 }
+
+// 4) Диагностика отправки: кімнің токені екенін және минимал хабарлама жететінін көрсетеді (токенсіз).
+function keisSendTest() {
+  const chat = PropertiesService.getScriptProperties().getProperty('CHAT_ID');
+  const short = function (r) { const t = r.getContentText(); return t.length > 160 ? t.slice(0, 160) + '…' : t; };
+  const me = JSON.parse(keisTg_('getMe', {}).getContentText());
+  const a = keisTg_('sendMessage', { chat_id: chat, text: 'Тест A (Бот Кейс): минимал хабарлама' });
+  const b = keisTg_('sendMessage', { chat_id: Number(chat), text: 'Тест B (Бот Кейс): chat_id сан түрінде', parse_mode: 'HTML' });
+  const c = keisTg_('getChat', { chat_id: chat });
+  say_('<b>Бот Кейс: жіберу сынағы</b>\nБот: @' + keisHtml_((me.result && me.result.username) || '?') + ' (id ' + keisHtml_(String(me.result && me.result.id)) + ')\nCHAT_ID: ' + keisHtml_(String(chat)) +
+    '\nA: ' + keisHtml_(short(a)) + '\nB: ' + keisHtml_(short(b)) + '\ngetChat: ' + keisHtml_(short(c)));
+}
