@@ -351,6 +351,17 @@ function keisSelfTest() {
   const rows = q.map(function (x) { const r = keisFreeSearch_(cases, x, 0); return keisHtml_(x) + ': ' + r[1]; });
   say_('<b>Бот Кейс: сынақ</b>\nКейс саны: <b>' + cases.length + '</b>\n' + rows.join('\n'));
 }
+// 2г) Webhook-ты Cloudflare Worker арқылы қосады (жылдам, 302-сіз). Алдымен Worker дайын болуы керек.
+// Мекенжай: WORKER_URL свойствосы немесе төмендегі тұрақты.
+const KEIS_WORKER_URL = 'https://tg-relay.yk2cmjp7vm.workers.dev';
+function keisSetWebhookViaWorker() {
+  const p = PropertiesService.getScriptProperties();
+  const base = p.getProperty('WORKER_URL') || KEIS_WORKER_URL;
+  const url = base.replace(/\/+$/, '') + '/' + p.getProperty('SECRET') + '/keis';
+  const r = keisTg_('setWebhook', { url: url, allowed_updates: JSON.stringify(['message']) });
+  say_('Бот Кейс webhook (Worker): ' + keisHtml_(JSON.parse(r.getContentText()).description || 'ok'));
+}
+
 // 3) Қайтару жолы: webhook-ты өшіреді (Mac-та ескі боттың polling режимін қайта қосу керек болса).
 function keisDeleteWebhook() {
   const r = keisTg_('deleteWebhook', { drop_pending_updates: false });
