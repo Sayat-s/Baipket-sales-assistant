@@ -339,9 +339,11 @@ function keisWebhookInfo() {
   const m = String(w.url || '').match(/^https?:\/\/([^\/?#]+)(\/[^?#]*)?/);
   const host = m ? m[1] : 'жоқ';
   const last = m && m[2] ? m[2].split('/').pop() : '';
-  const isBot = String(w.url || '').indexOf('bot=keis') >= 0;
-  say_('<b>Бот Кейс: webhook</b>\nДомен: ' + keisHtml_(host) + '\nСоңы: ' + keisHtml_(last) + (last === 'exec' ? ' ✅' : ' 🔴 (exec болуы керек)') +
-    '\nbot=keis: ' + (isBot ? 'иә' : 'жоқ') + '\nКезекте: ' + (w.pending_update_count || 0) +
+  const viaWorker = /workers\.dev$/.test(host) && last === 'keis';
+  const direct = host === 'script.google.com' && last === 'exec' && String(w.url || '').indexOf('bot=keis') >= 0;
+  const state = viaWorker ? '✅ Worker → Бот Кейс' : (direct ? '✅ тікелей Apps Script' : '🔴 дұрыс емес мекенжай');
+  say_('<b>Бот Кейс: webhook</b>\nДомен: ' + keisHtml_(host) + '\nСоңы: ' + keisHtml_(last) + '\nЖағдай: ' + state +
+    '\nКезекте: ' + (w.pending_update_count || 0) +
     (w.last_error_message ? '\nСоңғы қате: ' + keisHtml_(w.last_error_message) : ''));
 }
 // 2в) Іздеу жұмысын тексереді (контактсыз, тек сандар).
