@@ -32,3 +32,8 @@ title, desc, label, stage (todo|doing|wait|done), next, steps [{t,d}], who, due 
 ## Telegram-задачи и деньги
 - Всё, где упомянут Саят («Саят», «@HoS_Baipket») или что адресовано ему, превращается в задачу на доске (who = автор, notes = откуда). Бот видит только чаты, где он есть, и пересланные ему сообщения. Хранение обновлений Telegram: 24 часа, поэтому пуши разбирают их дважды в день (offset после обработки).
 - Каждый вечер спросить: дүкен кірісі / дүкен шығысы / үй шығысы. Ответ пишется в `money/{YYYY-MM-DD}`: shopIn, shopOut, homeOut (₸), note. На доске раздел «Қаржы».
+
+## Тыңдаушы (listener) и inbox
+- `bots/assistant/listener.py` — фоновый процесс: получает сообщения из Telegram через getUpdates и сразу подтверждает владельцу в личном чате («Қабылдадым»). Он единственный, кто вызывает getUpdates, поэтому пуши и сессия НЕ должны вызывать getUpdates сами (иначе будет конфликт и потеря сообщений).
+- Принятое складывается в `bots/assistant/inbox.jsonl` (kind: task | money | voice). Ассистент переносит записи на доску: task -> `tasks/tg-{update_id}`, money -> `money/{YYYY-MM-DD}`, voice -> расшифровать и добавить задачу. Перенесённые update_id записывай в `bots/assistant/tmp/synced.txt`.
+- Запуск: `cd bots/assistant && nohup python3 -I listener.py > tmp/listener.log 2>&1 &` (pid в tmp/listener.pid). Если процесс не работает (после перезапуска контейнера), запусти его снова. Команды в личном чате: /tapsyrma, /aqsha 250000 90000 30000, /namaz, /help.
