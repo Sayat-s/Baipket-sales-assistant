@@ -20,6 +20,11 @@ function wdCall_(token, method) {
   } catch (e) { return { ok: false, description: String(e) }; }
 }
 
+// Apps Script отвечает Telegram редиректом 302: это не поломка, сообщение обрабатывается.
+function wdIs302_(w) {
+  return String(w.last_error_message || '').indexOf('302') >= 0 && String(w.url || '').indexOf('script.google.com') >= 0;
+}
+
 function wdCheck_() {
   const props = PropertiesService.getScriptProperties();
   const res = [];
@@ -34,7 +39,7 @@ function wdCheck_() {
       const wh = wdCall_(token, 'getWebhookInfo');
       if (wh.ok && wh.result) {
         const w = wh.result, now = Math.floor(Date.now() / 1000);
-        if (w.last_error_date && now - w.last_error_date < ERROR_FRESH_SEC) {
+        if (w.last_error_date && now - w.last_error_date < ERROR_FRESH_SEC && !wdIs302_(w)) {
           issues.push('ошибка доставки: ' + (w.last_error_message || '?'));
         }
         if ((w.pending_update_count || 0) > PENDING_LIMIT) {
