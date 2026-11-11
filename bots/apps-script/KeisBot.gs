@@ -237,9 +237,16 @@ function keisTg_(method, payload) {
   const token = PropertiesService.getScriptProperties().getProperty('TOKEN_CASE');
   return UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/' + method, { method: 'post', payload: payload, muteHttpExceptions: true });
 }
+function keisLog_(obj) { try { log_('keis', JSON.stringify(obj)); } catch (e) {} }
 function keisSend_(chatId, text, html) {
   const r = keisTg_('sendMessage', { chat_id: chatId, text: text, parse_mode: html ? 'HTML' : undefined, disable_web_page_preview: true });
-  if (html && JSON.parse(r.getContentText()).ok === false) keisTg_('sendMessage', { chat_id: chatId, text: text.replace(/<[^>]+>/g, '') });
+  let out = {};
+  try { out = JSON.parse(r.getContentText()); } catch (e) { out = { ok: false, description: 'bad json' }; }
+  if (out.ok === false && html) {
+    const r2 = keisTg_('sendMessage', { chat_id: chatId, text: text.replace(/<[^>]+>/g, '') });
+    try { out = JSON.parse(r2.getContentText()); } catch (e) { out = { ok: false, description: 'bad json' }; }
+  }
+  if (out.ok === false) keisLog_({ send_error: out.description, chat: chatId });
 }
 function keisMe_() {
   const cache = CacheService.getScriptCache();
@@ -252,6 +259,13 @@ function keisMe_() {
 }
 
 function keisHandle_(u) {
+  try {
+    const t0 = Date.now();
+    keisHandleInner_(u);
+    keisLog_({ ok: true, ms: Date.now() - t0, text: String((u.message && u.message.text) || '').slice(0, 30) });
+  } catch (err) { keisLog_({ err: String(err) }); }
+}
+function keisHandleInner_(u) {
   const m = u.message;
   if (!m || !m.text) return;
   const chat = m.chat, cache = CacheService.getScriptCache();
