@@ -33,7 +33,8 @@ title, desc, label, stage (todo|doing|wait|done), next, steps [{t,d}], who, due 
 - Всё, где упомянут Саят («Саят», «@HoS_Baipket») или что адресовано ему, превращается в задачу на доске (who = автор, notes = откуда). Бот видит только чаты, где он есть, и пересланные ему сообщения. Хранение обновлений Telegram: 24 часа, поэтому пуши разбирают их дважды в день (offset после обработки).
 - Каждый вечер спросить: дүкен кірісі / дүкен шығысы / үй шығысы. Ответ пишется в `money/{YYYY-MM-DD}`: shopIn, shopOut, homeOut (₸), note. На доске раздел «Қаржы».
 
-## Тыңдаушы (listener) и inbox
-- `bots/assistant/listener.py` — фоновый процесс: получает сообщения из Telegram через getUpdates и сразу подтверждает владельцу в личном чате («Қабылдадым»). Он единственный, кто вызывает getUpdates, поэтому пуши и сессия НЕ должны вызывать getUpdates сами (иначе будет конфликт и потеря сообщений).
-- Принятое складывается в `bots/assistant/inbox.jsonl` (kind: task | money | voice). Ассистент переносит записи на доску: task -> `tasks/tg-{update_id}`, money -> `money/{YYYY-MM-DD}`, voice -> расшифровать и добавить задачу. Перенесённые update_id записывай в `bots/assistant/tmp/synced.txt`.
-- Запуск: `cd bots/assistant && nohup python3 -I listener.py > tmp/listener.log 2>&1 &` (pid в tmp/listener.pid). Если процесс не работает (после перезапуска контейнера), запусти его снова. Команды в личном чате: /tapsyrma, /aqsha 250000 90000 30000, /namaz, /help.
+## Бот на Google Apps Script (основной, 24/7)
+- Бот @assistsayatbot работает через webhook на Google Apps Script (код: `bots/apps-script/Code.gs`, привязан к таблице «Ассистент Inbox (Telegram)», id 1yqaN_dlOWH7WPOPQn-B47Dm5G9gJosgHYjFkIlNjkaA). Он сразу подтверждает владельцу «Қабылдадым» и пишет строку в лист `Inbox` (колонки: время, update_id, тип task|money|voice|habit, откуда, кто, текст, доп. JSON).
+- Пока включён webhook, getUpdates НЕ работает (ошибка 409). Не вызывай getUpdates и не запускай listener.py (он устарел, остался как запасной вариант: сначала deleteWebhook).
+- Ассистент читает лист Inbox через Google Drive (read_file_content) и переносит на доску: task -> `tasks/tg-{update_id}` (если документа ещё нет), money -> `money/{YYYY-MM-DD}`, voice -> расшифровать (getFile) и добавить задачу, habit -> учитывать в статистике привычек. Дедупликация: пропускать update_id, для которых уже есть `tasks/tg-{update_id}`.
+- Секреты (BOT_TOKEN, CHAT_ID, SECRET) лежат в «Свойствах скрипта» Apps Script; локально токен в bots/assistant/.env (не в git). SECRET добавлен в URL webhook как ?k=.
