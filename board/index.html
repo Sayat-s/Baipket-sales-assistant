@@ -63,6 +63,12 @@ button.danger{color:var(--bad)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:12px;display:flex;gap:12px;align-items:center;z-index:40;font-size:14px}
 .toast button{background:none;border:0;color:var(--accent);font:600 14px var(--font);cursor:pointer}
 .note{font-size:12.5px;color:var(--muted)}
+.money{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.money summary{cursor:pointer;font-weight:600}
+.mrow{display:grid;grid-template-columns:70px 1fr 1fr 1fr;gap:6px;font-size:13px;padding:5px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+.mrow.h{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;border-top:0}
+.mrow .pos{color:var(--ok)}.mrow .neg{color:var(--bad)}
+.mform{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:10px 0}
 @media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:0}}}
 </style>
 
@@ -71,6 +77,7 @@ button.danger{color:var(--bad)}
   <div class="tabs" role="tablist" id="tabs"></div>
   <div class="labels" id="labels"></div>
   <div id="list"></div>
+  <details class="money" id="money"><summary>Қаржы: дүкен және үй</summary><div id="moneyBody"></div></details>
 </div>
 <button class="fab" id="fab" aria-label="Добавить задачу">+</button>
 <div id="layer"></div>
@@ -79,7 +86,7 @@ button.danger{color:var(--bad)}
 (function(){
 const STAGES=[['todo','Сделать'],['doing','В работе'],['wait','Ждём'],['done','Готово']];
 const DEF_LABELS=['Работа','Семья','Дом'];
-let db=null, tasks=[], events=[], labels=DEF_LABELS.slice(), stage='todo', label='', openId=null, quick=false, canWrite=true, undoT=null;
+let db=null, money=[], tasks=[], events=[], labels=DEF_LABELS.slice(), stage='todo', label='', openId=null, quick=false, canWrite=true, undoT=null;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -231,6 +238,14 @@ function openLabels(){
 function render(){ renderTabs(); renderList(); renderLayer();
   const open=tasks.filter(t=>t.stage!=='done').length, od=tasks.filter(t=>t.stage!=='done'&&t.due&&t.due<today()).length;
   $('sub').textContent=open+' в работе'+(od?' · просрочено '+od:''); }
+const n0=v=>Number(String(v||'').replace(/[^\d.-]/g,''))||0, kzt=v=>n0(v).toLocaleString('ru-RU')+' ₸';
+function renderMoney(){
+  const body=$('moneyBody'); if(!body||body.contains(document.activeElement)&&document.activeElement.tagName==='INPUT') return;
+  const rows=money.slice().sort((a,b)=>b.id.localeCompare(a.id)).slice(0,10);
+  body.innerHTML=(canWrite?`<div class="mform"><label class="note">Дата<input id="m-date" type="date" value="${today()}"></label><label class="note">Дүкен кірісі<input id="m-in" inputmode="numeric"></label><label class="note">Дүкен шығысы<input id="m-out" inputmode="numeric"></label><label class="note">Үй шығысы<input id="m-home" inputmode="numeric"></label><button class="pri" id="m-save" style="grid-column:1/-1">Сақтау</button></div>`:'')+
+   (rows.length?`<div class="mrow h"><span>Күн</span><span>Кіріс</span><span>Дүкен шығыс</span><span>Үй</span></div>`+rows.map(r=>`<div class="mrow"><span>${esc(fmt(r.id))}</span><span class="pos">${kzt(r.shopIn)}</span><span class="neg">${kzt(r.shopOut)}</span><span class="neg">${kzt(r.homeOut)}</span></div>`).join(''):'<div class="note">Әзірге жазба жоқ. Ассистент күнде кешке сұрайды, жауабыңызды осында жазады.</div>');
+  const b=$('m-save'); if(b) b.onclick=async()=>{const d=$('m-date').value||today();try{await db.doc('money/'+d).set({shopIn:n0($('m-in').value),shopOut:n0($('m-out').value),homeOut:n0($('m-home').value),note:''})}catch(e){}};
+}
 $('fab').onclick=()=>{quick=true;renderLayer()};
 
 async function boot(){
@@ -241,9 +256,10 @@ async function boot(){
   try{ const u=await claude.use('user'); if(u&&u.can){const w=u.can('data.write'); if(w===false) canWrite=false} }catch(e){}
   if(!canWrite){$('fab').hidden=true}
   db.collection('tasks').onSnapshot(s=>{clearTimeout(to);tasks=s.docs.map(d=>({id:d.id,...d.data()}));render()},e=>{$('sub').textContent='Не удалось загрузить задачи'});
+  db.collection('money').onSnapshot(s=>{money=s.docs.map(d=>({id:d.id,...d.data()}));renderMoney()},()=>{});
   db.collection('events').onSnapshot(s=>{events=s.docs.map(d=>({id:d.id,...d.data()}));render()},()=>{});
   db.doc('meta/labels').onSnapshot(s=>{ if(s.exists&&Array.isArray(s.data().list)) labels=s.data().list; renderTabs()},()=>{});
 }
-render(); boot();
+renderMoney(); render(); boot();
 })();
 </script>
