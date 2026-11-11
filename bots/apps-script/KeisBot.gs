@@ -239,14 +239,17 @@ function keisTg_(method, payload) {
 }
 function keisLog_(obj) { try { log_('keis', JSON.stringify(obj)); } catch (e) {} }
 function keisSend_(chatId, text, html) {
-  const r = keisTg_('sendMessage', { chat_id: chatId, text: text, parse_mode: html ? 'HTML' : undefined, disable_web_page_preview: true });
+  // Минимал payload (тест A сияқты): chat_id жол түрінде, undefined өрістерсіз.
+  const payload = { chat_id: String(chatId), text: String(text) };
+  if (html) { payload.parse_mode = 'HTML'; payload.disable_web_page_preview = 'true'; }
+  const r = keisTg_('sendMessage', payload);
   let out = {};
   try { out = JSON.parse(r.getContentText()); } catch (e) { out = { ok: false, description: 'bad json' }; }
   if (out.ok === false && html) {
-    const r2 = keisTg_('sendMessage', { chat_id: chatId, text: text.replace(/<[^>]+>/g, '') });
+    const r2 = keisTg_('sendMessage', { chat_id: String(chatId), text: String(text).replace(/<[^>]+>/g, '') });
     try { out = JSON.parse(r2.getContentText()); } catch (e) { out = { ok: false, description: 'bad json' }; }
   }
-  if (out.ok === false) keisLog_({ send_error: out.description, chat: chatId });
+  if (out.ok === false) keisLog_({ send_error: out.description, chat: String(chatId), type: typeof chatId, html: !!html });
 }
 function keisMe_() {
   const cache = CacheService.getScriptCache();
