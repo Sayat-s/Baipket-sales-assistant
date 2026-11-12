@@ -237,16 +237,21 @@ function keisTg_(method, payload) {
   const token = PropertiesService.getScriptProperties().getProperty('TOKEN_CASE');
   return UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/' + method, { method: 'post', payload: payload, muteHttpExceptions: true });
 }
+// Форум-топик: жауап сұрақ қойылған топикке (message_thread_id) кетуі үшін. Әр doPost жеке орындалады, сондықтан глобал айнымалы қауіпсіз.
+var KEIS_THREAD_ = null;
 function keisLog_(obj) { try { log_('keis', JSON.stringify(obj)); } catch (e) {} }
 function keisSend_(chatId, text, html) {
   // Минимал payload (тест A сияқты): chat_id жол түрінде, undefined өрістерсіз.
   const payload = { chat_id: String(chatId), text: String(text) };
+  if (KEIS_THREAD_) payload.message_thread_id = String(KEIS_THREAD_);
   if (html) { payload.parse_mode = 'HTML'; payload.disable_web_page_preview = 'true'; }
   const r = keisTg_('sendMessage', payload);
   let out = {};
   try { out = JSON.parse(r.getContentText()); } catch (e) { out = { ok: false, description: 'bad json' }; }
   if (out.ok === false && html) {
-    const r2 = keisTg_('sendMessage', { chat_id: String(chatId), text: String(text).replace(/<[^>]+>/g, '') });
+    const p2 = { chat_id: String(chatId), text: String(text).replace(/<[^>]+>/g, '') };
+    if (KEIS_THREAD_) p2.message_thread_id = String(KEIS_THREAD_);
+    const r2 = keisTg_('sendMessage', p2);
     try { out = JSON.parse(r2.getContentText()); } catch (e) { out = { ok: false, description: 'bad json' }; }
   }
   if (out.ok === false) keisLog_({ send_error: out.description, chat: String(chatId), type: typeof chatId, html: !!html });
@@ -272,8 +277,9 @@ function keisHandleInner_(u) {
   const m = u.message;
   if (!m || !m.text) return;
   const chat = m.chat, cache = CacheService.getScriptCache();
+  KEIS_THREAD_ = (m.is_topic_message && m.message_thread_id) ? String(m.message_thread_id) : null;
   const me = keisMe_();
-  const lastKey = 'keis_last_' + chat.id;
+  const lastKey = 'keis_last_' + chat.id + '_' + (KEIS_THREAD_ || '');
   const getLast = function () { const v = cache.get(lastKey); return v ? JSON.parse(v) : null; };
   let text = m.text;
   const cmd = text.charAt(0) === '/' ? text.split(/[\s@]/)[0].toLowerCase() : '';
