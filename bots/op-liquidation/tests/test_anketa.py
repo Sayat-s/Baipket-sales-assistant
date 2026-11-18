@@ -232,12 +232,26 @@ class AnketaTests(unittest.TestCase):
         row = self.data['Астана'][1]
         self.assertEqual((row[1], row[2], row[3], row[8], row[9], row[10], row[13]), ('Олжас', 'Кулжабекова Назгуль', '87067367797', '29', 'Астана', 'смм', 179000))
 
+
+    def test_nearest_practicum_city_for_smaller_towns(self):
+        tabs = ['Алматы', 'Астана', 'Шымкент', 'Ақтау']
+        m = aq.DEFAULT_CITY_TABS
+        got = {c: aq.norm_tab(c, tabs, m) for c in ['Қарағанды', 'Түркістан', 'Ақтөбе', 'Тараз-Алматы', 'Талдықорған', 'Қызылорда', 'Павлодар',
+                                                    'Атырау', 'г. Тараз', 'Алматы', 'Шымкент']}
+        self.assertEqual(got, {'Қарағанды': 'Астана', 'Түркістан': 'Шымкент', 'Ақтөбе': 'Ақтау', 'Тараз-Алматы': 'Алматы', 'Талдықорған': 'Алматы',
+                               'Қызылорда': 'Шымкент', 'Павлодар': 'Астана', 'Атырау': 'Ақтау', 'г. Тараз': 'Шымкент', 'Алматы': 'Алматы',
+                               'Шымкент': 'Шымкент'})
+        self.assertIsNone(aq.norm_tab('Мәскеу', tabs, m))
+        self.send(REAL.replace('Астана', 'Қарағанды') + '179000')           # 9-сұрақ шағын қала
+        self.assertEqual(self.draft()['tab'], 'Астана')
+        self.assertIn('ең жақын', self.bot.sent[-1][1])
+
     def test_duplicate_warning(self):
         self.send(ANKETA.replace('+7 (777) 123-45-67', '8 706 688 10 39'))
         self.assertIn('бұрыннан бар', self.bot.sent[-1][1])
 
     def test_unknown_city_needs_tab_choice_and_tab_button(self):
-        self.send(ANKETA.replace('Астана', 'Көкшетау') + 'МОП: Алия\nВнесла: 50000')
+        self.send(ANKETA.replace('Астана', 'Мәскеу') + 'МОП: Алия\nВнесла: 50000')
         self.assertIn('қала/парақ', self.bot.sent[-1][1])
         self.assertTrue(self.press(self.draft()['id'], 't2'))
         self.assertEqual(self.draft()['tab'], 'Шымкент')
