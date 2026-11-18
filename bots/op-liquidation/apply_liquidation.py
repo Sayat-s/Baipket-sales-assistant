@@ -18,7 +18,7 @@ import urllib.request
 from pathlib import Path
 
 BASE = 'https://raw.githubusercontent.com/Sayat-s/Baipket-sales-assistant/claude/adoring-noether-eiml2n/bots/op-liquidation/'
-NEW_FILES = ['liquidation.py', 'llm.py']
+NEW_FILES = ['liquidation.py', 'anketa.py', 'llm.py']
 
 APP_TICK_OLD = """        try:
             from . import dashboard as _db
@@ -60,6 +60,22 @@ APP_PRICES_OLD = """        if command=='/prices':self._reply(key,price_text(sel
 APP_PRICES_NEW = """        if command=='/prices':
             from . import liquidation as _lqp
             self._reply(key,_lqp.prices_text(self.config,now) if _lqp.enabled(self.config) else price_text(self.config,now),now,chat);return
+"""
+APP_MSG_OLD = """        if not text:return
+        chat=msg['chat']['id'];head,*tail=text.split(maxsplit=1)
+"""
+APP_MSG_NEW = """        if not text:return
+        chat=msg['chat']['id'];head,*tail=text.split(maxsplit=1)
+        from . import anketa as _aq
+        if _aq.handle(self,msg,text,uid,is_owner,chat,now,key):return
+"""
+APP_CB_OLD = """        parts=callback.get('data','').split(':')
+        if len(parts)!=2 or not parts[1].isdigit(): return
+"""
+APP_CB_NEW = """        from . import anketa as _aqc
+        if _aqc.callback(self,callback,now): return
+        parts=callback.get('data','').split(':')
+        if len(parts)!=2 or not parts[1].isdigit(): return
 """
 APP_LOC_OLD = """            answer=_ck.handle_location(self.store,self.config,name,loc['latitude'],loc['longitude'],now)
             if answer: self._reply(uid_key,answer,now,chat=chat_id)
@@ -245,6 +261,8 @@ def main():
     edit(pkg / 'app.py', APP_CMD_OLD, APP_CMD_NEW, '_lq0.command')
     edit(pkg / 'app.py', APP_DAILY_OLD, APP_DAILY_NEW, '_lqd.enabled')
     edit(pkg / 'app.py', APP_PRICES_OLD, APP_PRICES_NEW, 'prices_text')
+    edit(pkg / 'app.py', APP_MSG_OLD, APP_MSG_NEW, '_aq.handle')
+    edit(pkg / 'app.py', APP_CB_OLD, APP_CB_NEW, '_aqc.callback')
     edit(pkg / 'app.py', APP_LOC_OLD, APP_LOC_NEW, '_ck.on_location')
     edit(pkg / 'app.py', APP_OFFICE_OLD, APP_OFFICE_NEW, "self.store.set('office'")
     edit(pkg / 'checkin.py', CK_OLD, CK_NEW, "o = store.get('office')")
