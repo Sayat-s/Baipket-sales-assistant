@@ -21,8 +21,9 @@ DEFAULT_CITY_TABS = {'алматы': 'Алматы', 'алмата': 'Алмат
 
 # (өріс, [кілт сөздер]) тәртібі маңызды: нақтырақтары алдымен
 LABELS = [
+    ('attend', ['қай қалаға', 'қалаға келе', 'келе аласыз', 'қатыса аласыз', 'практикумға', 'офлайн']),
     ('tg', ['телеграм', 'telegram', 'тг', 'ник', 'username', 'инста']),
-    ('email', ['почта', 'email', 'e-mail', 'mail', 'эл.п']),
+    ('email', ['почта', 'пошта', 'электронды', 'email', 'e-mail', 'mail', 'эл.п']),
     ('plan', ['вид оплаты', 'тип оплаты', 'рассрочка', 'голд', 'төлем түрі']),
     ('rest', ['остаток', 'қалдық', 'қалды']),
     ('agreed', ['договор', 'сумма', 'стоимость', 'цена', 'баға', 'құны', 'тариф']),
@@ -30,7 +31,7 @@ LABELS = [
     ('mop', ['моп', 'менеджер']),
     ('age', ['возраст', 'жас']),
     ('city', ['город', 'қала', 'каласы', 'проживан', 'откуда вы']),
-    ('status', ['статус', 'кәсіп', 'профессия', 'чем занима', 'деятельност', 'сфера', 'қызмет', 'кім боласыз', 'занятост']),
+    ('status', ['статус', 'кәсіп', 'профессия', 'чем занима', 'деятельност', 'сфера', 'қызмет', 'сала', 'маман', 'кім боласыз', 'занятост']),
     ('request', ['запрос', 'мақсат', 'цель', 'ожидан', 'не күтес', 'қатысудағы', 'чего хотите']),
     ('source', ['откуда клиент', 'источник', 'қайдан білд', 'откуда узнал']),
     ('date', ['дата']),
@@ -53,7 +54,7 @@ def _n(v):
 def _field(label):
     t = _n(label)
     for f, keys in LABELS:
-        if any(k in t for k in keys):
+        if any(_n(k) in t for k in keys):
             return f
     return None
 
@@ -65,6 +66,10 @@ def norm_phone(v):
     if len(d) == 11 and d[0] == '7':
         d = '8' + d[1:]
     return d if len(d) == 11 else ''
+
+
+def pick_tab(f, tabs, mapping):
+    return norm_tab(f.get('attend', ''), tabs, mapping) or norm_tab(f.get('city', ''), tabs, mapping)
 
 
 def norm_tab(city, tabs, mapping):
@@ -113,6 +118,16 @@ def parse(text, team, tier_price=None, forwarded_nick=None):
             if 2 <= len(w) <= 4 and not re.search(r'\d|@|:', line) and not EMAIL.search(line) and not any(_n(x) == _n(n) for n in team for x in w[:1]):
                 out['fio'] = line
                 break
+    if 'paid' not in out:
+        for line in free:
+            if PHONE.search(line) or EMAIL.search(line):
+                continue
+            mm = re.search(r'(?<![\d@])(\d{1,3}(?:[\s.,]\d{3})+|\d{4,7})(?![\d@])', line)
+            if mm:
+                v = lq._num(mm.group(1).replace(' ', ''))
+                if 1000 <= v <= 3000000:
+                    out['paid'] = v
+                    break
     for k in ('agreed', 'paid', 'rest'):
         if k in out:
             n = lq._num(out[k])
@@ -309,7 +324,7 @@ def _fwd_nick(msg):
 def preview(f, tab, dup, tabs, practicum=None):
     L = ['<b>Анкета</b> (кестеге жазылмаған, тексеріңіз)']
     rows = [('ФИО', f.get('fio')), ('Телефон', f.get('phone')), ('Email', f.get('email')), ('Telegram', f.get('tg')),
-            ('Жасы', f.get('age')), ('Қала', f.get('city')), ('Статус', f.get('status')), ('Запрос', f.get('request')),
+            ('Жасы', f.get('age')), ('Қала', f.get('city')), ('Практикумға келеді', f.get('attend')), ('Статус', f.get('status')), ('Запрос', f.get('request')),
             ('МОП', f.get('mop')), ('Келісілген', lq.money(f['agreed']) + ' ₸' if f.get('agreed') is not None else None),
             ('Внесла', lq.money(f['paid']) + ' ₸' if f.get('paid') is not None else None), ('Вид', f.get('plan'))]
     for k, v in rows:
@@ -323,13 +338,16 @@ def preview(f, tab, dup, tabs, practicum=None):
     return '\n'.join(L)
 
 
-def keyboard(did, tab, tabs, ready):
+def keyboard(did, tab, tabs, ready, team=None):
     rows = []
     if ready:
         rows.append([{'text': f'✅ Қосу → {tab}', 'callback_data': f'aq:{did}:ok'}, {'text': '❌ Болдырмау', 'callback_data': f'aq:{did}:no'}])
     else:
         rows.append([{'text': '❌ Болдырмау', 'callback_data': f'aq:{did}:no'}])
     rows.append([{'text': ('• ' if t == tab else '') + t, 'callback_data': f'aq:{did}:t{i}'} for i, t in enumerate(tabs)])
+    if team:
+        btn = [{'text': n, 'callback_data': f'aq:{did}:m{i}'} for i, n in enumerate(team)]
+        rows += [btn[i:i + 4] for i in range(0, len(btn), 4)]
     return {'inline_keyboard': rows}
 
 
@@ -366,6 +384,9 @@ def handle(bot, msg, text, uid, is_owner, chat, now, key):
             add['mop'] = _match_team(word, team)
         if 'paid' not in add and re.fullmatch(r'\d[\d\s]{2,9}', word):
             add['paid'] = float(re.sub(r'\s', '', word))
+        for k in ('paid', 'plan'):
+            if k in fields and k not in add and not fields.get('phone'):
+                add[k] = fields[k]
         new_person = fields.get('phone') and draft['f'].get('phone') and fields['phone'] != draft['f']['phone']
         if add and not new_person:
             draft['f'].update(add)
@@ -394,14 +415,14 @@ def _show_with_hits(bot, draft, now, chat):
     tabs = c['sheet_names']
     f = draft['f']
     mapping = dict(DEFAULT_CITY_TABS, **a.get('city_tabs', {}))
-    tab = draft.get('tab') or norm_tab(f.get('city', ''), tabs, mapping)
+    tab = draft.get('tab') or pick_tab(f, tabs, mapping)
     draft['tab'] = tab
     miss = missing(f, tab)
     text = preview(f, tab, draft.get('dup_hits') or [], tabs, lq.practicum_text(c, tab) if tab else None)
     if miss:
         text += '\n\n❗ Жетіспейді: <b>' + escape(', '.join(miss)) + '</b>. Мына түрде жазыңыз:\n<code>МОП: Арман\nВнесла: 179000</code>'
     bot.store.set('aq:draft:' + str(chat), dict(draft, at=now.isoformat()))
-    bot.enqueue(f'aq:show:{draft["id"]}:{now:%H%M%S%f}', text, now, chat=chat, keyboard=keyboard(draft['id'], tab, tabs, not miss),
+    bot.enqueue(f'aq:show:{draft["id"]}:{now:%H%M%S%f}', text, now, chat=chat, keyboard=keyboard(draft['id'], tab, tabs, not miss, [p['name'] for p in bot.config.get('team', [])] if not f.get('mop') else None),
                 expires=now + timedelta(hours=2))
 
 
@@ -445,6 +466,12 @@ def callback(bot, cb, now):
     if act.startswith('t') and act[1:].isdigit() and int(act[1:]) < len(c['sheet_names']):
         d['tab'] = c['sheet_names'][int(act[1:])]
         ack(d['tab'])
+        _show_with_hits(bot, d, now, chat)
+        return True
+    team = [p['name'] for p in bot.config.get('team', [])]
+    if act.startswith('m') and act[1:].isdigit() and int(act[1:]) < len(team):
+        d['f']['mop'] = team[int(act[1:])]
+        ack('МОП: ' + d['f']['mop'])
         _show_with_hits(bot, d, now, chat)
         return True
     if act != 'ok':

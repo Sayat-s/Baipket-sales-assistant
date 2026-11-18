@@ -101,6 +101,19 @@ Telegram: @ernazar_s
 """
 
 
+
+REAL = """1. Аты-жөніңіз: Айдана Серікқызы
+2. Жасыңыз: 22
+3. Телефон нөміріңіз: 8 705 111 22 33
+4. Электронды поштаңыз: aidana@mail.ru
+5. Telegram аккаунтыңыз: @aidana_s
+6. Қазіргі салаңыз / мамандығыңыз: SMM маманы
+7. Қай қаладансыз: Қарағанды
+8. Бағдарламадан күтетін нәтижеңіз (запрос): Өз брендімді дамыту
+9. Бағдарламаға қатысу үшін қай қалаға келе аласыз: Астана
+"""
+
+
 class AnketaTests(unittest.TestCase):
     def setUp(self):
         self._t = tempfile.TemporaryDirectory()
@@ -176,6 +189,32 @@ class AnketaTests(unittest.TestCase):
         row = self.data['Алматы'][2]                                 # 1-жол тақырып, 2-жол толы, жаңа жол 3-інші
         self.assertEqual((row[0], row[1], row[7], row[12], row[13], row[14], row[15]), (2, 'Арман', 'рассрочка', 179000, 170000, 9000, 'предоплата'))
         self.assertEqual(self.data['Алматы'][1][14], '=M2-N2')       # бар формула сақталды
+
+
+    def test_real_template_kazakh_labels_tab_from_question_9_and_amount_line(self):
+        f = aq.parse(REAL + "179000 рассрочка", TEAM, 179000)
+        self.assertEqual((f['fio'], f['age'], f['phone'], f['email'], f['tg']), ('Айдана Серікқызы', '22', '87051112233', 'aidana@mail.ru', '@aidana_s'))
+        self.assertEqual((f['status'], f['city'], f['attend']), ('SMM маманы', 'Қарағанды', 'Астана'))
+        self.assertEqual(f['request'], 'Өз брендімді дамыту')
+        self.assertEqual((f['paid'], f['plan']), (179000, 'рассрочка'))
+        self.send(REAL + "170000 голд")
+        self.assertEqual(self.draft()['tab'], 'Астана')                       # 7-қала емес, 9-практикум қаласы
+        self.assertIn('Практикум Астана', self.bot.sent[-1][1])
+        kb = self.bot.sent[-1][2]['keyboard']['inline_keyboard']
+        self.assertTrue(any(b['text'] == 'Арман' for r in kb for b in r))     # МОП батырмалары
+        self.press(self.draft()['id'], 'm3')                                  # Арман
+        self.assertEqual(self.draft()['f']['mop'], 'Арман')
+        self.press(self.draft()['id'], 'ok')
+        row = self.data['Астана'][1]
+        self.assertEqual((row[1], row[2], row[7], row[9], row[12], row[13], row[14], row[15]),
+                         ('Арман', 'Айдана Серікқызы', 'голд', 'Қарағанды', 179000, 170000, 9000, 'предоплата'))
+        self.assertEqual(row[24], 'Практикум Астана: 1–6 ақпан')
+
+    def test_amount_and_plan_in_separate_followup(self):
+        self.send(REAL)
+        self.assertIn('Внесла', self.bot.sent[-1][1])
+        self.send('179000 рассрочка')
+        self.assertEqual((self.draft()['f']['paid'], self.draft()['f']['plan']), (179000, 'рассрочка'))
 
     def test_duplicate_warning(self):
         self.send(ANKETA.replace('+7 (777) 123-45-67', '8 706 688 10 39'))
