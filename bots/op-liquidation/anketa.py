@@ -82,18 +82,69 @@ def norm_phone(v):
     return d if len(d) == 11 else ''
 
 
+# Картадағы нақты орналасу (ендік, бойлық): ең жақын практикум қаласын км бойынша есептеу үшін
+HUBS = {'Астана': (51.18, 71.45), 'Алматы': (43.24, 76.89), 'Шымкент': (42.32, 69.59), 'Ақтау': (43.65, 51.15)}
+CITY_COORDS = {
+    'караганд': (49.80, 73.10), 'саран': (49.80, 72.84), 'темиртау': (50.05, 72.96), 'кокшет': (53.28, 69.38),
+    'павлодар': (52.29, 76.97), 'аксу': (52.04, 76.92), 'екибастуз': (51.73, 75.32), 'экибастуз': (51.73, 75.32),
+    'петропавл': (54.87, 69.15), 'костанай': (53.21, 63.63), 'рудный': (52.97, 63.12), 'лисаковск': (52.54, 62.50),
+    'житикара': (52.19, 61.20), 'семей': (50.41, 80.26), 'семипалатинск': (50.41, 80.26), 'оскемен': (49.95, 82.61),
+    'усть-каменогорск': (49.95, 82.61), 'жезказган': (47.78, 67.77), 'сатпаев': (47.90, 67.53), 'сатбаев': (47.90, 67.53), 'балхаш': (46.84, 74.98),
+    'степногорск': (52.35, 71.88), 'аркалык': (50.25, 66.91), 'атбасар': (51.80, 68.35), 'ерейментау': (51.62, 73.10),
+    'акколь': (51.98, 70.95), 'щучинск': (52.93, 70.20), 'боровое': (53.08, 70.30), 'байконыр': (45.62, 63.31),
+    'конаев': (43.88, 77.08), 'капшагай': (43.88, 77.08), 'талдыкорган': (45.02, 78.37), 'текели': (44.85, 78.78),
+    'есик': (43.35, 77.45), 'уштобе': (45.25, 77.98), 'жаркент': (44.17, 79.99), 'каскелен': (43.20, 76.60),
+    'кордай': (43.05, 74.70), 'тараз': (42.90, 71.37), 'туркистан': (43.30, 68.25), 'туркестан': (43.30, 68.25),
+    'кызылорд': (44.85, 65.51), 'кентау': (43.52, 68.51), 'арыс': (42.43, 68.80), 'сарыагаш': (41.45, 69.17),
+    'актобе': (50.28, 57.21), 'хромтау': (50.25, 58.44), 'шалкар': (47.83, 59.60), 'атырау': (47.12, 51.88),
+    'уральск': (51.23, 51.37), 'орал': (51.23, 51.37), 'жанаозен': (43.35, 52.86), 'бейнеу': (45.32, 55.20),
+    'кулсары': (46.97, 54.02), 'аксай': (51.16, 53.00), 'шу': (43.60, 73.76), 'мангистау': (43.65, 51.15),
+}
+
+
+def _km(a, b):
+    from math import asin, cos, radians, sin, sqrt
+    la1, lo1, la2, lo2 = map(radians, (a[0], a[1], b[0], b[1]))
+    h = sin((la2 - la1) / 2) ** 2 + cos(la1) * cos(la2) * sin((lo2 - lo1) / 2) ** 2
+    return 12742 * asin(sqrt(h))
+
+
+def nearest_hub(text, tabs):
+    """Қала атынан координат тауып, ең жақын практикум қаласын (парақ, км) қайтарады."""
+    t = _n(text)
+    words = set(re.findall(r'[^\W\d_]+(?:-[^\W\d_]+)*', t))
+    for key, pt in CITY_COORDS.items():
+        nk = _n(key)
+        if (nk in t) if len(nk) > 3 else (nk in words):
+            best = min(((tab, _km(pt, xy)) for tab, xy in HUBS.items() if tab in tabs), key=lambda z: z[1], default=None)
+            return (best[0], int(round(best[1]))) if best else None
+    return None
+
+
+def tab_info(src, tabs, mapping):
+    """(парақ, км). Алдымен 4 қаланың өз аты, содан кейін карта бойынша ең жақыны, соңында қолмен тізім."""
+    t = _n(src).replace('г.', '').strip(' .,')
+    if not t:
+        return None, None
+    for tab in tabs:
+        if _n(tab) in t:
+            return tab, 0
+    near = nearest_hub(src, tabs)
+    if near:
+        return near
+    for k, tab in mapping.items():
+        if tab in tabs and _n(k) in t:
+            return tab, None
+    return None, None
+
+
+
 def pick_tab(f, tabs, mapping):
-    return norm_tab(f.get('attend', ''), tabs, mapping) or norm_tab(f.get('city', ''), tabs, mapping)
+    return tab_info(f.get('attend', ''), tabs, mapping)[0] or tab_info(f.get('city', ''), tabs, mapping)[0]
 
 
 def norm_tab(city, tabs, mapping):
-    t = _n(city).replace('г.', '').strip(' .,')
-    words = set(re.findall(r'[^\W\d_]+(?:-[^\W\d_]+)*', t))
-    for k, tab in mapping.items():
-        nk = _n(k)
-        if tab in tabs and ((nk in t) if len(nk) > 3 else (nk in words)):
-            return tab
-    return None
+    return tab_info(city, tabs, mapping)[0]
 
 
 INVISIBLE = re.compile('[\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff\u00ad]')
@@ -370,7 +421,8 @@ def preview(f, tab, dup, tabs, practicum=None):
         L.append(escape(practicum))
     src = f.get('attend') or f.get('city') or ''
     if tab and src and _n(tab) not in _n(src):
-        L.append(f'📍 «{escape(src)}» үшін ең жақын практикум қаласы таңдалды (қате болса, төмендегі батырмамен ауыстырыңыз)')
+        km = tab_info(src, tabs, dict(DEFAULT_CITY_TABS))[1]
+        L.append(f'📍 «{escape(src)}» үшін картадағы ең жақын практикум қаласы: {escape(tab)}' + (f' (~{km} км)' if km else '') + '. Қате болса, батырмамен ауыстырыңыз.')
     if dup:
         L.append('⚠️ Мұндай телефон/ФИО бұрыннан бар: ' + ', '.join(f'{escape(t)} {r}-жол' for t, r in dup))
     return '\n'.join(L)

@@ -246,6 +246,21 @@ class AnketaTests(unittest.TestCase):
         self.assertEqual(self.draft()['tab'], 'Астана')
         self.assertIn('ең жақын', self.bot.sent[-1][1])
 
+
+    def test_nearest_hub_by_map_distance(self):
+        tabs = ['Алматы', 'Астана', 'Шымкент', 'Ақтау']
+        self.assertEqual(aq.nearest_hub('Сәтбаев', tabs)[0], 'Астана')
+        self.assertEqual(aq.nearest_hub('Ақтөбе', tabs)[0], 'Ақтау')
+        self.assertEqual(aq.nearest_hub('Қызылорда', tabs)[0], 'Шымкент')
+        self.assertEqual(aq.nearest_hub('Текелі', tabs)[0], 'Алматы')
+        tab, km = aq.nearest_hub('Қарағанды', tabs)
+        self.assertEqual(tab, 'Астана')
+        self.assertTrue(180 <= km <= 240, km)                       # нақты ~ 210 км
+        self.assertIsNone(aq.nearest_hub('Мәскеу', tabs))
+        self.send(REAL.replace('Астана', 'Сәтбаев') + '179000')
+        self.assertIn('картадағы ең жақын', self.bot.sent[-1][1])
+        self.assertIn('км', self.bot.sent[-1][1])
+
     def test_duplicate_warning(self):
         self.send(ANKETA.replace('+7 (777) 123-45-67', '8 706 688 10 39'))
         self.assertIn('бұрыннан бар', self.bot.sent[-1][1])
