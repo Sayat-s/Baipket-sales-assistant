@@ -140,6 +140,37 @@ class LiquidationTests(unittest.TestCase):
         finally:
             FIXTURE[3]['values'].pop()
 
+
+    def test_salary_report_and_banner_render(self):
+        bot = FakeBot(self.tmp, {'bonus': {'pay': 10000, 'prepay': 5000}})
+        d = lq.parse(FIXTURE, TEAM, self.now.date(), self.c)
+        rows, rates = lq.salary_rows(bot, d, self.c)
+        by = {r['name']: r for r in rows}
+        self.assertEqual((by['Арман']['full'], by['Арман']['pre'], by['Арман']['bonus']), (1, 0, 10000))
+        self.assertEqual((by['Еңлік']['full'], by['Еңлік']['pre'], by['Еңлік']['bonus']), (1, 1, 15000))
+        txt = lq.salary_text(bot, d, self.c, self.now)
+        self.assertIn('Жиыны', txt)
+        self.assertIn('Еңлік', txt)
+        png = lq.render(d, lq.stats(d, self.c, self.now), self.c, self.now)
+        self.assertGreater(len(png), 20000)
+
+    def test_zp_is_owner_private_only(self):
+        bot = FakeBot(self.tmp)
+        lq.command(bot, self.now, -5, 'k', '/zp', False)
+        self.assertIn('жеке чатында', bot.replies[-1][1])
+        lq.command(bot, self.now, 77, 'k2', '/zp', True)
+        self.assertIn('ЗП есебі', bot.replies[-1][1])
+
+    def test_zp_daily_push_to_owner_once(self):
+        bot = FakeBot(self.tmp)
+        lq._post = lambda *a: None
+        n = datetime(2026, 11, 18, 21, 10, tzinfo=TZ)
+        lq.due(bot, n)
+        lq.due(bot, n)
+        z = [m for m in bot.sent if m[0].startswith('lq:zp:')]
+        self.assertEqual(len(z), 1)
+        self.assertEqual(z[0][2]['chat'], 77)
+
     def test_disabled_does_nothing(self):
         bot = FakeBot(self.tmp)
         bot.config['liquidation']['enabled'] = False

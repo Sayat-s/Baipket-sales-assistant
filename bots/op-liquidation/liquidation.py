@@ -379,7 +379,8 @@ def _fit(c, t, px, maxw, bold=True):
 def render(data, st, c, now):
     names = [n for n, _ in st['ranking']]
     rows = len(names)
-    H = 1034 + rows * 112
+    dy = 240
+    H = 1034 + dy + rows * 112
     cv = _C(1080, H)
     col = STATE_COL[st['state']]
     # тақырып
@@ -418,9 +419,29 @@ def render(data, st, c, now):
     cv.rr((tx0, 492, tx0 + ww, 538), 23, fill=col)
     cv.tx(tx0 + ww / 2, 500, lab, 28, '#0A0F24', True, 'm')
     cv.tx(tx0 + ww + 22, 502, STATE_TXT[st['state']], 26, col, True)
+    # лидер баннері + «Ожидается / Факт / Остаток»
+    lead = st['ranking'][0] if st['ranking'] and st['ranking'][0][1]['paid_n'] else None
+    cv.rr((40, 580, 1040, 636), 22, fill=GOLD)
+    if lead:
+        second = st['ranking'][1][1]['paid_n'] if len(st['ranking']) > 1 else 0
+        cv.tx(64, 590, _fit(cv, f'★ ЛИДЕР: {lead[0]} · {lead[1]["paid_n"]} оплата', 32, 690), 32, '#0A0F24', True)
+        cv.tx(1016, 596, f'2-орыннан +{lead[1]["paid_n"] - second}', 26, '#0A0F24', True, 'r')
+    else:
+        cv.tx(64, 590, '★ ЛИДЕР ӘЛІ ЖОҚ: бірінші оплата сенікі!', 32, '#0A0F24', True)
+    cv.rr((40, 636, 1040, 684), 0, fill=CARD)
+    shart = (c.get('prize') or f'Жоспарға тағы {st["need"]} оплата керек · күніне +{st["per_day"]}')
+    cv.tx(64, 646, _fit(cv, shart, 26, 940, False), 26, TXT)
+    tm = data['team']
+    tiles = [('ОЖИДАЕТСЯ', tm['agreed'], TXT), ('ФАКТ · КІРГЕН АҚША', tm['cash'], GREEN), ('ОСТАТОК · ДОПЛАТА', tm['balance'], ORANGE)]
+    tw = (1000 - 2 * 14) / 3
+    for i, (lab, val, colr) in enumerate(tiles):
+        tx0 = 40 + i * (tw + 14)
+        cv.rr((tx0, 706, tx0 + tw, 806), 22, fill=CARD, outline=EDGE, width=2)
+        cv.tx(tx0 + tw / 2, 718, lab, 20, MUT, True, 'm')
+        cv.tx(tx0 + tw / 2, 748, _fit(cv, f'{money(val)} ₸', 36, tw - 24), 36, colr, True, 'm')
     # ұпай жолағы: нақты vs жоспар сызығы
-    cv.tx(54, 588, 'ЖОСПАР ЖОЛЫ', 22, MUT, True)
-    x0, x1, y0 = 54, 1026, 624
+    cv.tx(54, 588 + dy, 'ЖОСПАР ЖОЛЫ', 22, MUT, True)
+    x0, x1, y0 = 54, 1026, 624 + dy
     cv.rr((x0, y0, x1, y0 + 30), 15, fill=TRACK)
     if pct > 0:
         cv.rr((x0, y0, x0 + max((x1 - x0) * pct, 30), y0 + 30), 15, fill=col)
@@ -428,19 +449,19 @@ def render(data, st, c, now):
     cv.rr((mx - 3, y0 - 10, mx + 3, y0 + 40), 3, fill=TXT)
     cv.tx(min(mx, x1 - 150), y0 + 44, f'бүгін керек: {math.ceil(st["exp_end"])}', 22, MUT)
     # баға баспалдағы
-    cv.tx(54, 722, 'БАҒА БАСПАЛДАҒЫ · әр қадамда қымбаттайды', 22, MUT, True)
+    cv.tx(54, 722 + dy, 'БАҒА БАСПАЛДАҒЫ · әр қадамда қымбаттайды', 22, MUT, True)
     n = len(t['tiers'])
     bw = (972 - 16 * (n - 1)) / n
     for i, tr in enumerate(t['tiers']):
         bx = 54 + i * (bw + 16)
         cur = i == t['index']
         past = i < t['index']
-        cv.rr((bx, 756, bx + bw, 850), 22, fill=(GOLD if cur else CARD), outline=(None if cur else EDGE), width=2)
+        cv.rr((bx, 756 + dy, bx + bw, 850 + dy), 22, fill=(GOLD if cur else CARD), outline=(None if cur else EDGE), width=2)
         fg = '#0A0F24' if cur else (MUT if past else TXT)
-        cv.tx(bx + bw / 2, 768, f'{money(tr["price"])} ₸', 34, fg, True, 'm')
-        cv.tx(bx + bw / 2, 812, f'{_d(tr["from"]):%d.%m}–{_d(tr["to"]):%d.%m}', 22, fg, False, 'm')
+        cv.tx(bx + bw / 2, 768 + dy, f'{money(tr["price"])} ₸', 34, fg, True, 'm')
+        cv.tx(bx + bw / 2, 812 + dy, f'{_d(tr["from"]):%d.%m}–{_d(tr["to"]):%d.%m}', 22, fg, False, 'm')
     # жарыс
-    y = 890
+    y = 890 + dy
     cv.tx(54, y, 'ЖАРЫС · МЕНЕДЖЕРЛЕР', 26, TXT, True)
     cv.tx(1026, y + 4, f'әрқайсысына ~{st["target_each"]}', 22, MUT, False, 'r')
     y += 52
@@ -579,6 +600,13 @@ def due(bot, now):
         _celebrate(bot, now, c, data, st, chat)
     except Exception:
         log.exception('liquidation celebrate failed')
+    zk = f'lq:zp:{now.date().isoformat()}'
+    if now.hour >= 21 and not bot.store.get(zk) and bot.config.get('owner_id'):
+        try:
+            bot.enqueue(zk, salary_text(bot, data, c, now), now, chat=bot.config['owner_id'], expires=now + timedelta(hours=3))
+            bot.store.set(zk, True)
+        except Exception:
+            log.exception('liquidation zp push failed')
     slots = sorted(c['push_at'])
     for i, hhmm in enumerate(slots):
         h, m = map(int, hhmm.split(':'))
@@ -600,6 +628,59 @@ def due(bot, now):
             log.warning('liquidation tablo failed (%s/4): %s', tries + 1, type(exc).__name__)
 
 
+# ---------------------------------------------------------------- ЗП есебі
+def _rates(config):
+    c = cfg(config)
+    b = config.get('bonus') or {}
+    r = {'full': b.get('pay', 10000), 'pre': b.get('prepay', 5000), 'percent': 0}
+    r.update(c.get('salary') or {})
+    return r
+
+
+def _fines(bot, start):
+    out = {}
+    try:
+        from . import fines
+        from datetime import date as _date
+        for iso in bot.store.get('fines:days') or []:
+            if _date.fromisoformat(iso) < start:
+                continue
+            for name, rec in fines._data(bot, _date.fromisoformat(iso)).items():
+                out[name] = out.get(name, 0) + fines._fsum(rec)
+    except Exception:
+        pass
+    return out
+
+
+def salary_rows(bot, data, c):
+    r = _rates(bot.config)
+    fn = _fines(bot, _d(c['start_date']))
+    rows = []
+    for name, v in sorted(data['by_mgr'].items(), key=lambda kv: (-kv[1]['paid_n'], kv[0])):
+        if name == 'Басқа':
+            continue
+        bonus = v['full_n'] * r['full'] + v['pre_n'] * r['pre'] + v['cash'] * r['percent'] / 100
+        fine = fn.get(name, 0)
+        rows.append({'name': name, 'paid_n': v['paid_n'], 'full': v['full_n'], 'pre': v['pre_n'], 'cash': v['cash'],
+                     'bonus': int(bonus), 'fine': int(fine), 'net': int(bonus - fine)})
+    return rows, r
+
+
+def salary_text(bot, data, c, now):
+    rows, r = salary_rows(bot, data, c)
+    L = [f'<b>ЗП есебі · {escape(c["title"])}</b> ({_d(c["start_date"]):%d.%m}–{now:%d.%m})']
+    for x in rows:
+        if not (x['paid_n'] or x['fine']):
+            continue
+        L.append(f'<b>{escape(x["name"])}</b>: {x["paid_n"]} оплата ({x["full"]} толық, {x["pre"]} пред.) · касса {money(x["cash"])} ₸\n'
+                 f'   бонус {money(x["bonus"])}' + (f' − штраф {money(x["fine"])}' if x['fine'] else '') + f' = <b>{money(x["net"])} ₸</b>')
+    tot = sum(x['net'] for x in rows)
+    L.append(f'\n<b>Жиыны: {money(tot)} ₸</b> · бонус {money(sum(x["bonus"] for x in rows))} · штраф {money(sum(x["fine"] for x in rows))}')
+    rule = f'толық оплата × {money(r["full"])} + предоплата × {money(r["pre"])}' + (f' + кассадан {r["percent"]}%' if r['percent'] else '')
+    L.append(f'<i>Есеп: {rule}, штраф алынады. Баға болжам: нақты формула басқа болса, config.json → liquidation.salary.</i>')
+    return '\n'.join(L)
+
+
 def prices_text(config, now):
     c = cfg(config)
     st = tier_info(c, now.date())
@@ -612,8 +693,8 @@ def prices_text(config, now):
     return '\n'.join(lines)
 
 
-def command(bot, now, chat, key):
-    """/tablo: қазіргі табло."""
+def command(bot, now, chat, key, which='/tablo', private_owner=True):
+    """/tablo: қазіргі табло, /zp: ЗП есебі (тек Саятқа жеке чатта)."""
     c = cfg(bot.config)
     if not enabled(bot.config):
         return bot._reply(key, 'Табло әлі қосылмаған: config.json ішіндегі liquidation бөлімін толтыру керек.', now, chat)
@@ -621,6 +702,10 @@ def command(bot, now, chat, key):
     if not data:
         err = escape((bot.store.get('lq:err') or 'белгісіз қате')[:160])
         return bot._reply(key, f'Табло шықпады: кестені оқи алмадым ({err}). Кестеге service account email-ін Viewer ретінде қосыңыз.', now, chat)
+    if which == '/zp':
+        if not private_owner:
+            return bot._reply(key, 'ЗП есебі тек Саяттың ботпен жеке чатында ашылады.', now, chat)
+        return bot._reply(key, salary_text(bot, data, c, now), now, chat)
     st = stats(data, c, now)
     try:
         _post(bot, chat, render(data, st, c, now), caption('misc', data, st, c))

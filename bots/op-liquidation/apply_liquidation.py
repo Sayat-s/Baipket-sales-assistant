@@ -61,6 +61,12 @@ APP_PRICES_NEW = """        if command=='/prices':
             from . import liquidation as _lqp
             self._reply(key,_lqp.prices_text(self.config,now) if _lqp.enabled(self.config) else price_text(self.config,now),now,chat);return
 """
+APP_ZP_OLD = """        if command=='/tablo' or (command in ('/dashboard','/report') and _lq0.enabled(self.config)):
+            _lq0.command(self,now,chat,key);return
+"""
+APP_ZP_NEW = """        if command in ('/tablo','/zp') or (command in ('/dashboard','/report') and _lq0.enabled(self.config)):
+            _lq0.command(self,now,chat,key,command,bool(is_owner and chat==uid));return
+"""
 APP_MSG_OLD = """        if not text:return
         chat=msg['chat']['id'];head,*tail=text.split(maxsplit=1)
 """
@@ -261,6 +267,7 @@ def main():
     edit(pkg / 'app.py', APP_CMD_OLD, APP_CMD_NEW, '_lq0.command')
     edit(pkg / 'app.py', APP_DAILY_OLD, APP_DAILY_NEW, '_lqd.enabled')
     edit(pkg / 'app.py', APP_PRICES_OLD, APP_PRICES_NEW, 'prices_text')
+    edit(pkg / 'app.py', APP_ZP_OLD, APP_ZP_NEW, "('/tablo','/zp')")
     edit(pkg / 'app.py', APP_MSG_OLD, APP_MSG_NEW, '_aq.handle')
     edit(pkg / 'app.py', APP_CB_OLD, APP_CB_NEW, '_aqc.callback')
     edit(pkg / 'app.py', APP_LOC_OLD, APP_LOC_NEW, '_ck.on_location')
