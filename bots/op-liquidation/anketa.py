@@ -80,8 +80,18 @@ def norm_tab(city, tabs, mapping):
     return None
 
 
+INVISIBLE = re.compile('[\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff\u00ad]')
+POS = re.compile(r'^\s*(\d{1,2})\s*[.)]\s*(.+?)\s*$')
+POSMAP = {1: 'fio', 2: 'age', 3: 'phone', 4: 'email', 5: 'tg', 6: 'status', 7: 'city', 8: 'request', 9: 'attend'}
+
+
+def clean(text):
+    return INVISIBLE.sub('', text or '').replace('\u00a0', ' ')
+
+
 def parse(text, team, tier_price=None, forwarded_nick=None):
     """Мәтіннен өрістерді алады. Қайтарады: dict (тек табылғандары)."""
+    text = clean(text)
     out = {}
     free = []
     for raw in text.splitlines():
@@ -89,6 +99,13 @@ def parse(text, team, tier_price=None, forwarded_nick=None):
             continue
         m = LINE.match(raw)
         f = _field(m.group(1)) if m else None
+        pm = POS.match(raw)
+        if pm and not (m and f and len(m.group(1)) <= 70):
+            field = POSMAP.get(int(pm.group(1)))
+            if field:
+                if field not in out:
+                    out[field] = pm.group(2).strip()
+                continue
         if f and f not in out:
             out[f] = m.group(2).strip()
         elif not m:
@@ -112,6 +129,8 @@ def parse(text, team, tier_price=None, forwarded_nick=None):
             out['tg'] = mm.group()
         elif forwarded_nick:
             out['tg'] = '@' + forwarded_nick.lstrip('@')
+    if out.get('tg') and not out['tg'].startswith('@') and re.fullmatch(r'[A-Za-z0-9_.]{4,32}', out['tg'].strip()):
+        out['tg'] = '@' + out['tg'].strip()
     if 'fio' not in out:
         for line in free:
             w = line.split()
@@ -369,6 +388,7 @@ def handle(bot, msg, text, uid, is_owner, chat, now, key):
         return False
     if text.startswith('/') and not text.lower().startswith(('/anketa', '/анкета')):
         return False
+    text = clean(text)
     team = [p['name'] for p in bot.config.get('team', [])]
     try:
         price = lq.tier_info(c, now.date())['price']

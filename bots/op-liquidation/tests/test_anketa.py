@@ -216,6 +216,22 @@ class AnketaTests(unittest.TestCase):
         self.send('179000 рассрочка')
         self.assertEqual((self.draft()['f']['paid'], self.draft()['f']['plan']), (179000, 'рассрочка'))
 
+
+    def test_numbered_answers_without_labels_and_invisible_chars(self):
+        W = '\u2060'
+        txt = (f"1.{W} Кулжабекова Назгуль\n2.{W} {W}29\n3.{W} {W}87067367797\n4.{W} {W}nazekagabba@gmail.com\n5.{W} {W}Nazeken_07\n"
+               f"6.{W} {W}смм\n7.{W} {W}Астана\n8.{W} {W}маркетинг саласын білу, чек көтеру\n9.{W} {W}Астана\n179000 рассрочка")
+        f = aq.parse(txt, TEAM, 179000)
+        self.assertEqual((f['fio'], f['age'], f['phone'], f['email'], f['tg']), ('Кулжабекова Назгуль', '29', '87067367797', 'nazekagabba@gmail.com', '@Nazeken_07'))
+        self.assertEqual((f['status'], f['city'], f['attend'], f['request']), ('смм', 'Астана', 'Астана', 'маркетинг саласын білу, чек көтеру'))
+        self.assertEqual((f['paid'], f['plan']), (179000, 'рассрочка'))
+        self.assertTrue(self.send(txt))
+        self.assertEqual(self.draft()['tab'], 'Астана')
+        self.press(self.draft()['id'], 'm1')
+        self.press(self.draft()['id'], 'ok')
+        row = self.data['Астана'][1]
+        self.assertEqual((row[1], row[2], row[3], row[8], row[9], row[10], row[13]), ('Олжас', 'Кулжабекова Назгуль', '87067367797', '29', 'Астана', 'смм', 179000))
+
     def test_duplicate_warning(self):
         self.send(ANKETA.replace('+7 (777) 123-45-67', '8 706 688 10 39'))
         self.assertIn('бұрыннан бар', self.bot.sent[-1][1])
