@@ -56,6 +56,7 @@ class Sess:
     def post(self, url, json=None, timeout=0):
         if self.fail:
             return Resp(code=self.fail)
+        self.opt = json.get('valueInputOption')
         for item in json['data']:
             rng = item['range']
             tab = rng.split('!')[0].strip("'")
@@ -121,6 +122,7 @@ class AnketaTests(unittest.TestCase):
         self.data = sheet()
         self.sess = Sess(self.data)
         aq._sess = lambda: self.sess
+        self.bot.config['liquidation']['anketa'] = {'auto_write': False}
 
     def tearDown(self):
         self._t.cleanup()
@@ -172,13 +174,13 @@ class AnketaTests(unittest.TestCase):
         wrote = {(c): v for (t, r, c, v) in self.sess.writes}
         row = self.data['Астана'][1]                                 # Астанада бірінші жол бос болған
         self.assertEqual((row[1], row[2], row[3]), ('Еңлік', 'Сейтқали Ерназар Нұрланұлы', '87771234567'))
-        self.assertEqual((row[4], row[5], row[8], row[9], row[10]), ('ernazar@gmail.com', '@ernazar_s', '24', 'Астана', 'смм'))
+        self.assertEqual((row[4], row[5], row[8], row[9], row[10]), ('ernazar@gmail.com', '@ernazar_s', 24, 'Астана', 'смм'))
         self.assertEqual((row[12], row[13], row[14], row[15]), (179000, 179000, 0, 'оплата'))
         self.assertEqual(row[0], 1)
         self.assertEqual(row[6], '18.11')
         self.assertEqual(row[16], False)                             # чекбокстарға тимеді
         self.assertEqual(row[24], 'Практикум Астана: 1–6 ақпан')
-        self.assertTrue(any('Жазылды' in m[1] for m in self.bot.sent))
+        self.assertTrue(any('✅' in m[1] and 'Астана' in m[1] for m in self.bot.sent))
         self.assertTrue(self.press(did, 'ok', 2))                    # қайта басу екінші жол жазбайды
         self.assertEqual(len([w for w in self.sess.writes if w[2] == 2]), 1)
 
@@ -230,7 +232,7 @@ class AnketaTests(unittest.TestCase):
         self.press(self.draft()['id'], 'm1')
         self.press(self.draft()['id'], 'ok')
         row = self.data['Астана'][1]
-        self.assertEqual((row[1], row[2], row[3], row[8], row[9], row[10], row[13]), ('Олжас', 'Кулжабекова Назгуль', '87067367797', '29', 'Астана', 'смм', 179000))
+        self.assertEqual((row[1], row[2], row[3], row[8], row[9], row[10], row[13]), ('Олжас', 'Кулжабекова Назгуль', '87067367797', 29, 'Астана', 'смм', 179000))
 
 
     def test_nearest_practicum_city_for_smaller_towns(self):
@@ -260,6 +262,18 @@ class AnketaTests(unittest.TestCase):
         self.send(REAL.replace('Астана', 'Сәтбаев') + '179000')
         self.assertIn('картадағы ең жақын', self.bot.sent[-1][1])
         self.assertIn('км', self.bot.sent[-1][1])
+
+
+    def test_unnumbered_lines_and_other_separators_still_fill_everything(self):
+        order = "Жүсіпбек Аяулым\n22\n8 705 580 26 91\nayaulymzhusipbek3@gmail.com\nswayau\nSMM маманы\nТүркістан\nМаркетингті үйреніп, өз брендімді дамытқым келеді\nАстана\n"
+        f = aq.parse(order + "МОП: Олжас\nВнесла 179,000 тг\nРассрочка", TEAM, 179000)
+        self.assertEqual((f['fio'], f['age'], f['phone'], f['email'], f['tg']), ('Жүсіпбек Аяулым', '22', '87055802691', 'ayaulymzhusipbek3@gmail.com', '@swayau'))
+        self.assertEqual((f['status'], f['city'], f['attend']), ('SMM маманы', 'Түркістан', 'Астана'))
+        self.assertEqual(f['request'], 'Маркетингті үйреніп, өз брендімді дамытқым келеді')
+        self.assertEqual((f['paid'], f['plan'], f['mop']), (179000, 'рассрочка', 'Олжас'))
+        g = aq.parse("1 - Назгуль Кулжан\n2) 29\n№3: 87067367797\n4 – a@b.kz\n5. @nz_07\n6: смм\n7. Астана\n8. чек көтеру\n9. Астана", TEAM)
+        self.assertEqual((g['fio'], g['age'], g['phone'], g['email'], g['tg'], g['status'], g['request'], g['attend']),
+                         ('Назгуль Кулжан', '29', '87067367797', 'a@b.kz', '@nz_07', 'смм', 'чек көтеру', 'Астана'))
 
     def test_duplicate_warning(self):
         self.send(ANKETA.replace('+7 (777) 123-45-67', '8 706 688 10 39'))
@@ -297,6 +311,104 @@ class AnketaTests(unittest.TestCase):
         msg = {'text': ANKETA, 'chat': {'id': 77}}
         aq.handle(self.bot, msg, ANKETA, 77, True, 77, late, 'k')
         self.assertEqual(self.draft()['f']['agreed'], 239000)
+
+
+class TG2(TG):
+    def __init__(self):
+        super().__init__()
+        self.msgs = []
+
+    def send(self, payload):
+        self.msgs.append(('send', payload))
+        return {'message_id': len(self.msgs)}
+
+    def call(self, m, d=None, **k):
+        if m == 'editMessageText':
+            self.msgs.append(('edit', d))
+        return super().call(m, d, **k)
+
+
+class AutoTests(unittest.TestCase):
+    """Толық анкета бірден жазылады, бір хабарлама өзгертіледі, қайтару бар."""
+    def setUp(self):
+        self._t = tempfile.TemporaryDirectory()
+        self.bot = Bot(self._t.name)
+        self.bot.telegram = TG2()
+        self.data = sheet()
+        self.sess = Sess(self.data)
+        aq._sess = lambda: self.sess
+
+    def tearDown(self):
+        self._t.cleanup()
+
+    def send(self, text):
+        return aq.handle(self.bot, {'text': text, 'chat': {'id': 77}}, text, 77, True, 77, NOW, 'k')
+
+    def press(self, act, n=1):
+        d = self.bot.store.get('aq:draft:77')
+        cb = {'id': f'c{n}', 'data': f'aq:{d["id"]}:{act}', 'from': {'id': 77}, 'message': {'chat': {'id': 77}}}
+        return aq.callback(self.bot, cb, NOW)
+
+    def test_users_real_flow_amount_in_separate_message_one_edited_message(self):
+        body = REAL.replace('Астана', 'Астана').replace('Қарағанды', 'Астана')
+        self.send(body)
+        sends = [m for m in self.bot.telegram.msgs if m[0] == 'send']
+        self.assertEqual(len(sends), 1)
+        self.assertIn('Жетіспейді', sends[0][1]['text'])
+        self.assertEqual(self.sess.writes, [])
+        self.send('МОП: Олжас\nВнесла 179,000 тг\nРассрочка')
+        row = self.data['Астана'][1]
+        self.assertEqual((row[1], row[2], row[7], row[12], row[13], row[14], row[15]), ('Олжас', 'Айдана Серікқызы', 'рассрочка', 179000, 179000, 0, 'оплата'))
+        msgs = self.bot.telegram.msgs
+        self.assertEqual(len([m for m in msgs if m[0] == 'send']), 1)                # жаңа хабарлама жоқ
+        edits = [m for m in msgs if m[0] == 'edit']
+        self.assertTrue(edits and edits[-1][1]['message_id'] == 1)
+        self.assertIn('✅', edits[-1][1]['text'])
+        self.assertIn('undo', str(edits[-1][1]['reply_markup']))
+        self.assertEqual(self.sess.opt, 'RAW')
+
+    def test_full_message_writes_immediately(self):
+        self.send(REAL + 'МОП: Арман\n179 000 голд')
+        self.assertEqual(self.data['Астана'][1][1], 'Арман')
+        self.assertEqual(self.data['Астана'][1][7], 'голд')
+        self.assertEqual(len([m for m in self.bot.telegram.msgs if m[0] == 'send']), 1)
+
+
+    def test_missing_extras_block_autowrite_and_followup_fills(self):
+        short = "1. Аты-жөніңіз: Жүсіпбек Аяулым\n3. Телефон нөміріңіз: 87055802691\n4. Электронды поштаңыз: a@b.kz\n5. Telegram аккаунтыңыз: @swayau\n9. Бағдарламаға қатысу үшін қай қалаға келе аласыз: Астана\nМОП: Олжас\n179000 рассрочка"
+        self.send(short)
+        self.assertEqual(self.sess.writes, [])
+        txt = self.bot.telegram.msgs[-1][1]['text']
+        self.assertIn('Бос қалады', txt)
+        self.assertIn('запрос', txt)
+        self.send('Запрос: маркетингті үйрену\nЖасы: 22\nСтатус: смм')
+        self.assertEqual(self.data['Астана'][1][17], 'маркетингті үйрену')
+        self.assertEqual(self.data['Астана'][1][8], 22)
+
+    def test_duplicate_needs_confirmation(self):
+        self.send(REAL.replace('8 705 111 22 33', '8 706 688 10 39') + 'МОП: Арман\n179000')
+        self.assertEqual(self.sess.writes, [])
+        self.assertIn('бұрыннан бар', self.bot.telegram.msgs[-1][1]['text'])
+        self.assertIn('Қосу', str(self.bot.telegram.msgs[-1][1]['reply_markup']))
+
+    def test_undo_clears_written_cells_only(self):
+        self.send(REAL + 'МОП: Арман\n179000')
+        self.assertEqual(self.data['Астана'][1][2], 'Айдана Серікқызы')
+        self.data['Астана'][1][21] = 'қолмен жазылған'                                   # адам кейін қосқан ұяшық
+        self.press('undo')
+        row = self.data['Астана'][1]
+        self.assertEqual((row[1], row[2], row[3], row[13]), ('', '', '', ''))
+        self.assertEqual(row[21], 'қолмен жазылған')
+        self.assertIn('Қайтарылды', self.bot.telegram.msgs[-1][1]['text'])
+        n = len(self.sess.writes)
+        self.press('undo', 2)
+        self.assertEqual(len(self.sess.writes), n)
+
+    def test_formula_injection_is_written_as_text(self):
+        evil = REAL.replace('Айдана Серікқызы', '=HYPERLINK("http://x","a")')
+        self.send(evil + 'МОП: Арман\n179000')
+        self.assertEqual(self.sess.opt, 'RAW')
+        self.assertEqual(self.data['Астана'][1][2], '=HYPERLINK("http://x","a")')
 
 
 if __name__ == '__main__':

@@ -148,12 +148,67 @@ def norm_tab(city, tabs, mapping):
 
 
 INVISIBLE = re.compile('[\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff\u00ad]')
-POS = re.compile(r'^\s*(\d{1,2})\s*[.)]\s*(.+?)\s*$')
+POS = re.compile(r'^\s*(?:№\s*)?(\d{1,2})\s*(?:[.):]|\s[-–—]|[-–—]\s)\s*(.+?)\s*$')
+TIMELIKE = re.compile(r'^\s*\d{1,2}:\d{2}(?!\d)')
 POSMAP = {1: 'fio', 2: 'age', 3: 'phone', 4: 'email', 5: 'tg', 6: 'status', 7: 'city', 8: 'request', 9: 'attend'}
 
 
 def clean(text):
     return INVISIBLE.sub('', text or '').replace('\u00a0', ' ')
+
+
+STATUS_WORDS = ('смм', 'smm', 'маркетолог', 'студент', 'мұғалім', 'мугалим', 'учител', 'предпринимат', 'кәсіпкер', 'фриланс', 'дизайнер',
+                'менеджер', 'бизнес', 'оқушы', 'школьник', 'жұмыссыз', 'врач', 'дәрігер', 'инженер', 'продаж', 'сату', 'контент', 'фото',
+                'видео', 'таргет', 'копирайт', 'директор', 'собственник', 'иесі', 'самозанят', 'декрет', 'тренер', 'блогер', 'бухгалтер')
+
+
+def _service_line(line, team, contacts=True):
+    if contacts and (PHONE.search(line) or EMAIL.search(line)):
+        return True
+    n = _n(line)
+    if re.search(r'(?<!\w)(рассрочка|голд|моп|менеджер)(?!\w)', n) and len(line) <= 40:
+        return True
+    if not PHONE.search(line) and not EMAIL.search(line) and re.search(r'(\d{1,3}(?:[\s.,]\d{3})+|\d{4,7})\s*(тг|₸|тенге)?', line) and len(re.sub(r'[\d\s.,]|тг|₸|тенге', '', n)) <= 14:
+        return True
+    if len(line.split()) == 1 and _match_team(line, team):
+        return True
+    return len(line) > 160 and ('қош келдіңіз' in n or 'анкет' in n)
+
+
+def _fill_missing(out, free, team):
+    """Белгісіз жолдардан жасын, қаласын, статусын, запросын болжап толтырады (тек бос өрістерге)."""
+    ordered = [ln for ln in free if not _service_line(ln, team, contacts=False)]
+    if len(ordered) >= 8:                             # 9 жол стандартты тәртіппен келсе
+        for i, ln in enumerate(ordered[:9]):
+            out.setdefault(POSMAP[i + 1], ln)
+    taken = set(out.values()) | {'@' + str(v) for v in out.values()}
+    cand = [ln for ln in free if not _service_line(ln, team) and ln not in taken]
+    used = set()
+    for ln in cand:
+        if 'age' not in out and re.fullmatch(r'\D{0,12}(\d{2})\D{0,12}', ln) and 14 <= int(re.search(r'\d{2}', ln).group()) <= 70:
+            out['age'] = re.search(r'\d{2}', ln).group()
+            used.add(ln)
+    for ln in cand:
+        if ln in used or len(ln) > 30:
+            continue
+        if tab_info(ln, list(HUBS), DEFAULT_CITY_TABS)[0] and not re.search(r'\d', ln):
+            if 'city' not in out:
+                out['city'] = ln
+                used.add(ln)
+            elif 'attend' not in out:
+                out['attend'] = ln
+                used.add(ln)
+    for ln in cand:
+        if ln not in used and 'status' not in out and len(ln) <= 50 and any(w in _n(ln) for w in STATUS_WORDS):
+            out['status'] = ln
+            used.add(ln)
+    rest = [ln for ln in cand if ln not in used and len(ln) >= 12 and not _is_fio_like(ln, out)]
+    if 'request' not in out and rest:
+        out['request'] = max(rest, key=len)
+
+
+def _is_fio_like(ln, out):
+    return ln == out.get('fio') or (len(ln.split()) in (2, 3) and not re.search(r'\d|@', ln) and ln == out.get('fio'))
 
 
 def parse(text, team, tier_price=None, forwarded_nick=None):
@@ -166,7 +221,7 @@ def parse(text, team, tier_price=None, forwarded_nick=None):
             continue
         m = LINE.match(raw)
         f = _field(m.group(1)) if m else None
-        pm = POS.match(raw)
+        pm = None if TIMELIKE.match(raw) else POS.match(raw)
         if pm and not (m and f and len(m.group(1)) <= 70):
             field = POSMAP.get(int(pm.group(1)))
             if field:
@@ -196,6 +251,11 @@ def parse(text, team, tier_price=None, forwarded_nick=None):
             out['tg'] = mm.group()
         elif forwarded_nick:
             out['tg'] = '@' + forwarded_nick.lstrip('@')
+        else:
+            for line in free:
+                if re.fullmatch(r'[A-Za-z][A-Za-z0-9_.]{3,31}', line.strip()):
+                    out['tg'] = '@' + line.strip()
+                    break
     if out.get('tg') and not out['tg'].startswith('@') and re.fullmatch(r'[A-Za-z0-9_.]{4,32}', out['tg'].strip()):
         out['tg'] = '@' + out['tg'].strip()
     if 'fio' not in out:
@@ -204,6 +264,7 @@ def parse(text, team, tier_price=None, forwarded_nick=None):
             if 2 <= len(w) <= 4 and not re.search(r'\d|@|:', line) and not EMAIL.search(line) and not any(_n(x) == _n(n) for n in team for x in w[:1]):
                 out['fio'] = line
                 break
+    _fill_missing(out, free, team)
     if 'paid' not in out:
         for line in free:
             if PHONE.search(line) or EMAIL.search(line):
@@ -262,6 +323,23 @@ def looks_like_anketa(text, fields):
     if t.startswith(('анкета', '#анкета', '/anketa', '/анкета')):
         return True
     return bool(fields.get('phone')) and score(fields) >= 3
+
+
+def empty_optional(f):
+    out = []
+    if not f.get('age'):
+        out.append('жасы')
+    if not (f.get('city') or f.get('attend')):
+        out.append('қала')
+    if not f.get('status'):
+        out.append('статус')
+    if not f.get('request'):
+        out.append('запрос')
+    if not f.get('email'):
+        out.append('email')
+    if not f.get('tg'):
+        out.append('Telegram')
+    return out
 
 
 def missing(f, tab):
@@ -369,6 +447,8 @@ def build_cells(f, rows, cols, row_i, num, today, comment=None):
             continue                      # бар мәнге/формулаға тимейміз
         if isinstance(v, float) and v == int(v):
             v = int(v)
+        if key in ('age', 'num') and re.fullmatch(r'\d{1,3}', str(v).strip()):
+            v = int(str(v).strip())
         cells.append((j, v))
     return cells
 
@@ -385,7 +465,7 @@ def _a1(j):
 
 def write(sess, sid, tab, row_i, cells):
     data = [{'range': "'%s'!%s%d" % (tab.replace("'", "''"), _a1(j), row_i + 1), 'values': [[v]]} for j, v in cells]
-    r = sess.post(f'{SHEETS}{sid}/values:batchUpdate', json={'valueInputOption': 'USER_ENTERED', 'data': data}, timeout=30)
+    r = sess.post(f'{SHEETS}{sid}/values:batchUpdate', json={'valueInputOption': 'RAW', 'data': data}, timeout=30)
     r.raise_for_status()
 
 
@@ -478,12 +558,14 @@ def handle(bot, msg, text, uid, is_owner, chat, now, key):
         for k in ('paid', 'plan'):
             if k in fields and k not in add and not fields.get('phone'):
                 add[k] = fields[k]
+        if 'age' not in add and not draft['f'].get('age') and re.fullmatch(r'\d{2}', text.strip()) and 14 <= int(text.strip()) <= 70:
+            add['age'] = text.strip()
         new_person = fields.get('phone') and draft['f'].get('phone') and fields['phone'] != draft['f']['phone']
         if add and not new_person:
             draft['f'].update(add)
             if 'city' in add:
                 draft['tab'] = None
-            _show_with_hits(bot, draft, now, chat)
+            _present(bot, draft, now, chat)
             return True
     if not looks_like_anketa(text, fields):
         return False
@@ -493,7 +575,7 @@ def handle(bot, msg, text, uid, is_owner, chat, now, key):
         draft['dup_hits'] = duplicates(data, fields.get('phone'), fields.get('fio'))
     except Exception as exc:
         log.warning('anketa duplicate check failed: %s', type(exc).__name__)
-    _show_with_hits(bot, draft, now, chat)
+    _present(bot, draft, now, chat)
     return True
 
 
@@ -501,22 +583,124 @@ def _explicit(text):
     return {f for raw in text.splitlines() for m in [LINE.match(raw)] if m for f in [_field(m.group(1))] if f}
 
 
-def _show_with_hits(bot, draft, now, chat):
+def _say(bot, chat, text, kb, now, key, edit_id=None):
+    """Тікелей жібереді (кезексіз, жылдам). Мүмкін болса, ескі хабарламаны өзгертеді. Сәтсіз болса, кезекке түседі."""
+    payload = {'chat_id': chat, 'text': text, 'parse_mode': 'HTML', 'link_preview_options': {'is_disabled': True}}
+    if kb:
+        payload['reply_markup'] = kb
+    tg = getattr(bot, 'telegram', None)
+    try:
+        if edit_id:
+            tg.call('editMessageText', dict(payload, message_id=edit_id))
+            return edit_id
+        r = tg.send(payload)
+        return r.get('message_id') if isinstance(r, dict) else None
+    except Exception as exc:
+        log.info('anketa direct send failed (%s), queued', type(exc).__name__)
+    try:
+        bot.enqueue(key, text, now, chat=chat, keyboard=kb, expires=now + timedelta(hours=2))
+    except Exception:
+        pass
+    return None
+
+
+def _present(bot, d, now, chat):
+    """Толық болса, бірден жазады; болмаса, бір ғана хабарламаны жаңартып көрсетеді."""
     c, a = _cfg(bot.config)
     tabs = c['sheet_names']
-    f = draft['f']
+    f = d['f']
     mapping = dict(DEFAULT_CITY_TABS, **a.get('city_tabs', {}))
-    tab = draft.get('tab') or pick_tab(f, tabs, mapping)
-    draft['tab'] = tab
+    tab = d.get('tab') or pick_tab(f, tabs, mapping)
+    d['tab'] = tab
     miss = missing(f, tab)
-    text = preview(f, tab, draft.get('dup_hits') or [], tabs, lq.practicum_text(c, tab) if tab else None)
+    empty = empty_optional(f)
+    if not miss and not empty and not d.get('dup_hits') and a.get('auto_write', True) and not d.get('done'):
+        return _save(bot, d, c, now, chat)
+    text = preview(f, tab, d.get('dup_hits') or [], tabs, lq.practicum_text(c, tab) if tab else None)
     if miss:
-        text += '\n\n❗ Жетіспейді: <b>' + escape(', '.join(miss)) + '</b>. Мына түрде жазыңыз:\n<code>МОП: Арман\nВнесла: 179000</code>'
-    bot.store.set('aq:draft:' + str(chat), dict(draft, at=now.isoformat()))
-    bot.enqueue(f'aq:show:{draft["id"]}:{now:%H%M%S%f}', text, now, chat=chat, keyboard=keyboard(draft['id'], tab, tabs, not miss, [p['name'] for p in bot.config.get('team', [])] if not f.get('mop') else None),
-                expires=now + timedelta(hours=2))
+        text += '\n\n❗ Жетіспейді: <b>' + escape(', '.join(miss)) + '</b>. Төмендегі батырманы басыңыз немесе жазыңыз, мысалы: <code>Внесла 179000 рассрочка</code>'
+    if empty and not miss:
+        text += '\n\n⚠️ Бос қалады: <b>' + escape(', '.join(empty)) + '</b>. Жазыңыз (мысалы <code>Запрос: ...</code>, <code>Жасы: 22</code>) немесе «✅ Қосу» басыңыз.'
+    kb = keyboard(d['id'], tab, tabs, not miss, [p['name'] for p in bot.config.get('team', [])] if not f.get('mop') else None)
+    if not (d.get('mid') and d.get('last') == text):
+        mid = _say(bot, chat, text, kb, now, f'aq:show:{d["id"]}:{now:%H%M%S%f}', d.get('mid'))
+        d['mid'] = mid or d.get('mid')
+        d['last'] = text
+    bot.store.set('aq:draft:' + str(chat), dict(d, at=now.isoformat()))
 
 
+def _save(bot, d, c, now, chat, ack=None):
+    tab = d.get('tab')
+    did = d['id']
+    d['done'] = 'saving'
+    bot.store.set('aq:draft:' + str(chat), dict(d, at=now.isoformat()))
+    try:
+        sess = _sess()
+        data_ = _read(sess, c['spreadsheet_id'], c['sheet_names'], 400)
+        rows = data_[tab]
+        hi, cols = _cols(rows)
+        if hi is None:
+            raise ValueError('Тақырып жолы табылмады')
+        row_i, num = find_row(rows, cols, hi)
+        cells = build_cells(d['f'], rows, cols, row_i, num, now.date(), lq.practicum_text(c, tab))
+        if not cells:
+            raise ValueError('Жазатын ұяшық жоқ')
+        write(sess, c['spreadsheet_id'], tab, row_i, cells)
+        back = _read(sess, c['spreadsheet_id'], [tab], 400)[tab]
+        r = back[row_i] if row_i < len(back) else []
+        ok = norm_phone(_val(r, cols.get('phone'))) == norm_phone(d['f'].get('phone')) or _n(_val(r, cols.get('fio'))) == _n(d['f'].get('fio'))
+        d['done'] = 'saved'
+        d['written'] = {'tab': tab, 'row': row_i, 'cells': [[j, v] for j, v in cells]}
+        bot.store.set('aq:draft:' + str(chat), dict(d, at=now.isoformat()))
+        if ack:
+            ack('Жазылды ✅')
+        paid = d['f'].get('paid')
+        txt = (f'✅ <b>{escape(tab)}</b>, {row_i + 1}-жол: {escape(str(d["f"].get("fio")))} · МОП {escape(str(d["f"].get("mop")))}'
+               + (f' · {lq.money(paid)} ₸' if paid is not None else '') + (f' · {escape(str(d["f"].get("plan")))}' if d['f'].get('plan') else ''))
+        if not ok:
+            txt = f'⚠️ Жазу жіберілді, бірақ {escape(tab)} парағының {row_i + 1}-жолын тексере алмадым. Кестені көзбен қараңыз.'
+        _say(bot, chat, txt, {'inline_keyboard': [[{'text': '↩ Қайтару (жолды тазалау)', 'callback_data': f'aq:{did}:undo'}]]}, now, f'aq:ok:{did}', d.get('mid'))
+        try:
+            bot.store.set('dash:sheet', None)
+            bot.store.set('lq:data', None)
+        except Exception:
+            pass
+    except Exception as exc:
+        d['done'] = None
+        bot.store.set('aq:draft:' + str(chat), dict(d, at=now.isoformat()))
+        code = type(exc).__name__ + ': ' + str(exc)[:120]
+        hint = ''
+        if '403' in str(exc):
+            try:
+                from . import fines
+                hint = f'\nКестеге <code>{escape(fines.sa_email())}</code> email-ін <b>Editor</b> ретінде қосыңыз.'
+            except Exception:
+                hint = '\nService account-қа кестеде Editor рұқсатын беріңіз.'
+        if ack:
+            ack('Жазылмады')
+        _say(bot, chat, f'❌ Кестеге жазылмады ({escape(code)}).{hint}', None, now, f'aq:err:{did}:{now:%H%M%S}')
+
+
+def _undo(bot, d, c, now, chat, ack):
+    w = d.get('written') or {}
+    if d.get('done') != 'saved' or not w:
+        ack('Қайтаратын жазба жоқ')
+        return
+    try:
+        sess = _sess()
+        rows = _read(sess, c['spreadsheet_id'], [w['tab']], 400)[w['tab']]
+        row = rows[w['row']] if w['row'] < len(rows) else []
+        clear = [(j, '') for j, v in w['cells'] if _s(_val(row, j)) == _s(v)]
+        if clear:
+            write(sess, c['spreadsheet_id'], w['tab'], w['row'], clear)
+        d['done'] = 'undone'
+        bot.store.set('aq:draft:' + str(chat), dict(d, at=now.isoformat()))
+        ack('Қайтарылды')
+        _say(bot, chat, f'↩ Қайтарылды: {escape(w["tab"])} парағының {w["row"] + 1}-жолы тазаланды ({len(clear)} ұяшық).', None, now, f'aq:undo:{d["id"]}', d.get('mid'))
+        bot.store.set('lq:data', None)
+    except Exception as exc:
+        ack('Қайтару сәтсіз')
+        _say(bot, chat, f'❌ Қайтару мүмкін болмады ({escape(type(exc).__name__)}). Жолды кестеде қолмен тазалаңыз.', None, now, f'aq:uerr:{d["id"]}')
 
 
 def callback(bot, cb, now):
@@ -545,6 +729,9 @@ def callback(bot, cb, now):
     if not d or d.get('id') != did:
         ack('Бұл анкета ескірген, қайта жіберіңіз')
         return True
+    if act == 'undo':
+        _undo(bot, d, c, now, chat, ack)
+        return True
     if d.get('done'):
         ack('Бұл анкета бұрын өңделген')
         return True
@@ -552,68 +739,25 @@ def callback(bot, cb, now):
         d['done'] = 'cancel'
         bot.store.set('aq:draft:' + str(chat), d)
         ack('Болдырылмады')
-        bot.enqueue(f'aq:no:{did}', 'Анкета жойылды, кестеге жазылған жоқ.', now, chat=chat)
+        _say(bot, chat, 'Анкета жойылды, кестеге жазылған жоқ.', None, now, f'aq:no:{did}', d.get('mid'))
         return True
     if act.startswith('t') and act[1:].isdigit() and int(act[1:]) < len(c['sheet_names']):
         d['tab'] = c['sheet_names'][int(act[1:])]
         ack(d['tab'])
-        _show_with_hits(bot, d, now, chat)
+        _present(bot, d, now, chat)
         return True
     team = [p['name'] for p in bot.config.get('team', [])]
     if act.startswith('m') and act[1:].isdigit() and int(act[1:]) < len(team):
         d['f']['mop'] = team[int(act[1:])]
         ack('МОП: ' + d['f']['mop'])
-        _show_with_hits(bot, d, now, chat)
+        _present(bot, d, now, chat)
         return True
     if act != 'ok':
         ack()
         return True
-    tab = d.get('tab')
-    miss = missing(d['f'], tab)
+    miss = missing(d['f'], d.get('tab'))
     if miss:
         ack('Жетіспейді: ' + ', '.join(miss))
         return True
-    d['done'] = 'saving'
-    bot.store.set('aq:draft:' + str(chat), d)
-    try:
-        sess = _sess()
-        data_ = _read(sess, c['spreadsheet_id'], c['sheet_names'], 400)
-        rows = data_[tab]
-        hi, cols = _cols(rows)
-        if hi is None:
-            raise ValueError('Тақырып жолы табылмады')
-        row_i, num = find_row(rows, cols, hi)
-        cells = build_cells(d['f'], rows, cols, row_i, num, now.date(), lq.practicum_text(c, tab))
-        if not cells:
-            raise ValueError('Жазатын ұяшық жоқ')
-        write(sess, c['spreadsheet_id'], tab, row_i, cells)
-        back = _read(sess, c['spreadsheet_id'], [tab], 400)[tab]
-        ok = norm_phone(_val(back[row_i] if row_i < len(back) else [], cols.get('phone'))) == norm_phone(d['f'].get('phone')) or \
-            _n(_val(back[row_i] if row_i < len(back) else [], cols.get('fio'))) == _n(d['f'].get('fio'))
-        d['done'] = 'saved'
-        bot.store.set('aq:draft:' + str(chat), d)
-        ack('Жазылды ✅')
-        if ok:
-            bot.enqueue(f'aq:ok:{did}', f'✅ Жазылды: <b>{escape(tab)}</b>, {row_i + 1}-жол · {escape(str(d["f"].get("fio")))} · МОП {escape(str(d["f"].get("mop")))}.',
-                        now, chat=chat)
-        else:
-            bot.enqueue(f'aq:chk:{did}', f'⚠️ Жазу жіберілді, бірақ {tab} парағының {row_i + 1}-жолын тексере алмадым. Кестені көзбен қараңыз.', now, chat=chat)
-        try:
-            bot.store.set('dash:sheet', None)
-            bot.store.set('lq:data', None)
-        except Exception:
-            pass
-    except Exception as exc:
-        d['done'] = None
-        bot.store.set('aq:draft:' + str(chat), d)
-        code = type(exc).__name__ + ': ' + str(exc)[:120]
-        hint = ''
-        if '403' in str(exc):
-            try:
-                from . import fines
-                hint = f'\nКестеге <code>{escape(fines.sa_email())}</code> email-ін <b>Editor</b> ретінде қосыңыз.'
-            except Exception:
-                hint = '\nService account-қа кестеде Editor рұқсатын беріңіз.'
-        ack('Жазылмады')
-        bot.enqueue(f'aq:err:{did}:{now:%H%M%S}', f'❌ Кестеге жазылмады ({escape(code)}).{hint}', now, chat=chat)
+    _save(bot, d, c, now, chat, ack)
     return True

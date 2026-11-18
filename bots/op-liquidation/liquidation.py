@@ -79,6 +79,8 @@ def _num(v):
     t = re.sub(r'[^\d,.\-]', '', _s(v).replace('\u00a0', ''))
     if not t or t in '-.,':
         return 0.0
+    if re.fullmatch(r'-?\d{1,3}(?:[.,]\d{3})+', t):
+        return float(re.sub(r'[.,]', '', t))
     if ',' in t and '.' in t:
         t = t.replace(',', '')
     else:
