@@ -43,7 +43,7 @@ EMAIL = re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+')
 TGNICK = re.compile(r'(?<![\w@])@[A-Za-z0-9_]{4,32}')
 HEADER = {'№': 'num', 'моп': 'mop', 'фио': 'fio', 'телефон': 'phone', 'эл.почта': 'email', 'теллеграм': 'tg', 'дата покупки': 'date',
           'возраст': 'age', 'город': 'city', 'статус': 'status', 'откуда клиент': 'source', 'договоренная сумма': 'agreed',
-          'внесла': 'paid', 'остаток': 'rest', 'курсқа қатысудағы': 'request'}
+          'внесла': 'paid', 'остаток': 'rest', 'курсқа қатысудағы': 'request', 'комментарий': 'comment'}
 
 
 def _n(v):
@@ -246,7 +246,7 @@ def duplicates(data, phone, fio):
     return hits
 
 
-def build_cells(f, rows, cols, row_i, num, today):
+def build_cells(f, rows, cols, row_i, num, today, comment=None):
     """Жазылатын ұяшықтар: (баған индексі, мән). Формула бар ұяшық пен толтырылған ұяшыққа тимейді."""
     paid, agreed = f.get('paid'), f.get('agreed')
     rest = f.get('rest')
@@ -256,7 +256,7 @@ def build_cells(f, rows, cols, row_i, num, today):
     values = {'num': num, 'mop': f.get('mop'), 'fio': f.get('fio'), 'phone': f.get('phone'), 'email': f.get('email'),
               'tg': f.get('tg'), 'date': f.get('date') or f'{today:%d.%m}', 'plan': f.get('plan'), 'age': f.get('age'),
               'city': f.get('city'), 'status': f.get('status'), 'source': f.get('source'), 'agreed': agreed, 'paid': paid,
-              'rest': rest, 'kind': kind if paid is not None else None, 'request': f.get('request')}
+              'rest': rest, 'kind': kind if paid is not None else None, 'request': f.get('request'), 'comment': comment}
     row = rows[row_i] if row_i < len(rows) else []
     cells = []
     for key, v in values.items():
@@ -306,7 +306,7 @@ def _fwd_nick(msg):
     return u.get('username')
 
 
-def preview(f, tab, dup, tabs):
+def preview(f, tab, dup, tabs, practicum=None):
     L = ['<b>Анкета</b> (кестеге жазылмаған, тексеріңіз)']
     rows = [('ФИО', f.get('fio')), ('Телефон', f.get('phone')), ('Email', f.get('email')), ('Telegram', f.get('tg')),
             ('Жасы', f.get('age')), ('Қала', f.get('city')), ('Статус', f.get('status')), ('Запрос', f.get('request')),
@@ -316,6 +316,8 @@ def preview(f, tab, dup, tabs):
         if v not in (None, ''):
             L.append(f'{k}: {escape(str(v))}')
     L.append(f'Парақ: <b>{escape(tab)}</b>' if tab else 'Парақ: ❓ таңдаңыз')
+    if tab and practicum:
+        L.append(escape(practicum))
     if dup:
         L.append('⚠️ Мұндай телефон/ФИО бұрыннан бар: ' + ', '.join(f'{escape(t)} {r}-жол' for t, r in dup))
     return '\n'.join(L)
@@ -395,7 +397,7 @@ def _show_with_hits(bot, draft, now, chat):
     tab = draft.get('tab') or norm_tab(f.get('city', ''), tabs, mapping)
     draft['tab'] = tab
     miss = missing(f, tab)
-    text = preview(f, tab, draft.get('dup_hits') or [], tabs)
+    text = preview(f, tab, draft.get('dup_hits') or [], tabs, lq.practicum_text(c, tab) if tab else None)
     if miss:
         text += '\n\n❗ Жетіспейді: <b>' + escape(', '.join(miss)) + '</b>. Мына түрде жазыңыз:\n<code>МОП: Арман\nВнесла: 179000</code>'
     bot.store.set('aq:draft:' + str(chat), dict(draft, at=now.isoformat()))
@@ -463,7 +465,7 @@ def callback(bot, cb, now):
         if hi is None:
             raise ValueError('Тақырып жолы табылмады')
         row_i, num = find_row(rows, cols, hi)
-        cells = build_cells(d['f'], rows, cols, row_i, num, now.date())
+        cells = build_cells(d['f'], rows, cols, row_i, num, now.date(), lq.practicum_text(c, tab))
         if not cells:
             raise ValueError('Жазатын ұяшық жоқ')
         write(sess, c['spreadsheet_id'], tab, row_i, cells)

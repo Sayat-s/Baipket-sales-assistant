@@ -29,7 +29,7 @@ def mkrow(**kw):
 def sheet():
     first = mkrow(c0=1, c1='Арман', c2='Торгаев А', c3='87066881039', c6='17.11', c9='Алматы', c12='179 000,00', c13='179 000,00',
                   c14='=M2-N2', c15='оплата')
-    blank = [''] * 16 + [False, '', False, False, False, False, False]      # алдын ала қойылған чекбокстар
+    blank = [''] * 16 + [False, '', False, False, False, False, False, '', '']      # алдын ала қойылған чекбокстар, 25 баған
     return {t: [list(HEAD)] + ([first] if t == 'Алматы' else []) + [list(blank) for _ in range(30)] for t in ('Алматы', 'Астана', 'Шымкент', 'Ақтау')}
 
 
@@ -164,6 +164,7 @@ class AnketaTests(unittest.TestCase):
         self.assertEqual(row[0], 1)
         self.assertEqual(row[6], '18.11')
         self.assertEqual(row[16], False)                             # чекбокстарға тимеді
+        self.assertEqual(row[24], 'Практикум Астана: 1–6 ақпан')
         self.assertTrue(any('Жазылды' in m[1] for m in self.bot.sent))
         self.assertTrue(self.press(did, 'ok', 2))                    # қайта басу екінші жол жазбайды
         self.assertEqual(len([w for w in self.sess.writes if w[2] == 2]), 1)

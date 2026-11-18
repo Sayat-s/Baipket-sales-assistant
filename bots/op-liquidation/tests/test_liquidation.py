@@ -171,6 +171,48 @@ class LiquidationTests(unittest.TestCase):
         self.assertEqual(len(z), 1)
         self.assertEqual(z[0][2]['chat'], 77)
 
+
+    def test_sheet_tab_created_filled_and_throttled(self):
+        from baipket_bot import fines
+
+        class R:
+            def __init__(s, body=None): s.body = body or {}
+            def json(s): return s.body
+            def raise_for_status(s): pass
+
+        class S:
+            def __init__(s, has=False): s.calls, s.has = [], has
+            def get(s, url, params=None, timeout=0):
+                s.calls.append(('get', url))
+                return R({'sheets': ([{'properties': {'sheetId': 5, 'title': 'ТАБЛО'}}] if s.has else []) + [{'properties': {'sheetId': 1, 'title': 'Алматы'}}]})
+            def post(s, url, json=None, timeout=0):
+                s.calls.append(('post', url, json))
+                return R({'replies': [{'addSheet': {'properties': {'sheetId': 9}}}]})
+            def put(s, url, params=None, json=None, timeout=0):
+                s.calls.append(('put', url, json))
+                return R()
+
+        sess = S()
+        fines._sess = lambda: sess
+        bot = FakeBot(self.tmp)
+        d = lq.parse(FIXTURE, TEAM, self.now.date(), self.c)
+        st = lq.stats(d, self.c, self.now)
+        self.assertTrue(lq.sync_sheet(bot, self.now, d, st, self.c))
+        kinds = [x[0] + ':' + x[1].split('/')[-1] for x in sess.calls]
+        self.assertTrue(any(k.startswith('post:') and 'addSheet' in str(x[2]) for k, x in zip(kinds, sess.calls) if x[0] == 'post'))
+        put = [x for x in sess.calls if x[0] == 'put'][0][2]['values']
+        flat = [str(v) for r in put for v in r]
+        self.assertTrue(any('КОМАНДА' in v for v in flat))
+        self.assertTrue(any('Қазіргі лидер' in v for v in flat))
+        self.assertTrue(any('практикум' in v for v in flat))
+        self.assertFalse(lq.sync_sheet(bot, self.now, d, st, self.c))                 # тез қайталанбайды
+        sess2 = S(has=True)
+        fines._sess = lambda: sess2
+        later = datetime(2026, 11, 18, 14, 10, tzinfo=TZ)
+        d2 = json.loads(json.dumps(d)); d2['team']['cash'] += 1000
+        self.assertTrue(lq.sync_sheet(bot, later, d2, lq.stats(d2, self.c, later), self.c))
+        self.assertFalse(any('addSheet' in str(x[2]) for x in sess2.calls if x[0] == 'post'))   # парақ бар болса, жаңа жасалмайды
+
     def test_disabled_does_nothing(self):
         bot = FakeBot(self.tmp)
         bot.config['liquidation']['enabled'] = False

@@ -37,6 +37,12 @@ DEFAULTS = {
     'days': [0, 1, 2, 3, 4, 5, 6],
     'title': 'ЛИКВИДАЦИЯ',
     'subtitle': 'Senior Marketer',
+    'tablo_tab': 'ТАБЛО',
+    'tablo_every_min': 3,
+    'program': {
+        'offline': {'Астана': '1–6 ақпан', 'Алматы': '15–20 ақпан', 'Шымкент': '22–27 ақпан', 'Ақтау': '8–13 наурыз'},
+        'online': 'онлайн доступ 1 желтоқсан – 28 ақпан (3 ай), 197 сабақ',
+    },
 }
 
 _TR = str.maketrans({'ұ': 'у', 'ү': 'у', 'қ': 'к', 'ғ': 'г', 'ң': 'н', 'ө': 'о', 'ә': 'а', 'і': 'и', 'һ': 'х', 'ё': 'е', 'й': 'и'})
@@ -597,6 +603,11 @@ def due(bot, now):
     st = stats(data, c, now)
     chat = bot.config.get('chat_id')
     try:
+        sync_sheet(bot, now, data, st, c)
+    except Exception as exc:
+        bot.store.set('lq:tablo_err', type(exc).__name__ + ': ' + str(exc)[:140])
+        log.warning('liquidation sheet tab failed: %s', type(exc).__name__)
+    try:
         _celebrate(bot, now, c, data, st, chat)
     except Exception:
         log.exception('liquidation celebrate failed')
@@ -626,6 +637,161 @@ def due(bot, now):
             log.info('liquidation tablo sent: %s', hhmm)
         except Exception as exc:
             log.warning('liquidation tablo failed (%s/4): %s', tries + 1, type(exc).__name__)
+
+
+# ---------------------------------------------------------------- кестедегі ТАБЛО парағы
+def practicum_text(c, tab):
+    d = ((c.get('program') or {}).get('offline') or {}).get(tab)
+    return f'Практикум {tab}: {d}' if d else None
+
+
+def _rgb(h):
+    return {'red': int(h[1:3], 16) / 255, 'green': int(h[3:5], 16) / 255, 'blue': int(h[5:7], 16) / 255}
+
+
+NAVY, PANEL, SHEET_GOLD, LGREEN, LYEL, WHITE = '#1E2D4A', '#EEF1F6', '#E9C46A', '#E6F4EA', '#FFF1C7', '#FFFFFF'
+NCOL = 9
+
+
+def build_sheet_grid(data, st, c, now):
+    """(grid, форматтау тізімі). Форматтау: (r0, r1, c0, c1, merge, kw) бос емес жолдар индексі 0-ден."""
+    t = st['tier']
+    tm = data['team']
+    rank = st['ranking']
+    lead = rank[0] if rank and rank[0][1]['paid_n'] else None
+    second = rank[1][1]['paid_n'] if len(rank) > 1 else 0
+    G, F = [], []
+
+    def row(*cells):
+        G.append(list(cells) + [''] * (NCOL - len(cells)))
+        return len(G) - 1
+
+    def fmt(r0, r1, c0, c1, merge=False, **kw):
+        F.append((r0, r1, c0, c1, merge, kw))
+
+    r = row(f'✈ BAIPKET • {c["title"]} · {c["subtitle"]}')
+    fmt(r, r + 1, 0, NCOL, True, bg=NAVY, fg=WHITE, bold=True, size=22, h='LEFT')
+    r = row(f'Жоспар {st["plan"]} оплата · {st["start"]:%d.%m}–{st["end"]:%d.%m} · қазіргі баға {money(t["price"])} ₸ ({tier_note(st).replace("⚠️ ", "")})')
+    fmt(r, r + 1, 0, NCOL, True, bg=NAVY, fg=WHITE, size=12, h='LEFT')
+    r = row('Қазіргі лидер: ' + (f'{lead[0]} · {lead[1]["paid_n"]} оплата · 2-орыннан +{lead[1]["paid_n"] - second}' if lead else 'әлі жоқ, бірінші оплата сенікі!'))
+    fmt(r, r + 1, 0, NCOL, True, bg=SHEET_GOLD, fg='#1E2D4A', bold=True, size=16, h='LEFT')
+    r = row(c.get('prize') or f'Жоспарға тағы {st["need"]} оплата керек · күніне +{st["per_day"]} · {st["days_left"]} күн қалды')
+    fmt(r, r + 1, 0, NCOL, True, bg=LYEL, fg='#1E2D4A', size=12, h='LEFT')
+    row()
+    r = row('ОПЛАТА / ПЛАН', '', '', 'ПЛАН ОРЫНДАЛУЫ', '', '', 'ҚАЛДЫ', '', '')
+    fmt(r, r + 1, 0, 3, True, bg=PANEL, fg='#1E2D4A', bold=True, size=11, h='CENTER')
+    fmt(r, r + 1, 3, 6, True, bg=PANEL, fg='#1E2D4A', bold=True, size=11, h='CENTER')
+    fmt(r, r + 1, 6, 9, True, bg=PANEL, fg='#1E2D4A', bold=True, size=11, h='CENTER')
+    r = row(f'{st["paid"]} / {st["plan"]}', '', '', f'{st["pct"]}%', '', '', f'{st["need"]} оплата', '', '')
+    for c0, c1 in ((0, 3), (3, 6), (6, 9)):
+        fmt(r, r + 1, c0, c1, True, bg=PANEL, fg='#1E2D4A', bold=True, size=26, h='CENTER', rowh=48)
+    row()
+    r = row('ОЖИДАЕТСЯ', '', '', 'ФАКТ · КІРГЕН АҚША', '', '', 'ОСТАТОК · ДОПЛАТА', '', '')
+    for c0, c1 in ((0, 3), (3, 6), (6, 9)):
+        fmt(r, r + 1, c0, c1, True, bg=PANEL, fg='#1E2D4A', bold=True, size=11, h='CENTER')
+    r = row(tm['agreed'], '', '', tm['cash'], '', '', tm['balance'], '', '')
+    fmt(r, r + 1, 0, 3, True, bg=PANEL, fg='#1E2D4A', bold=True, size=22, h='CENTER', num='#,##0 "₸"', rowh=44)
+    fmt(r, r + 1, 3, 6, True, bg=LGREEN, fg='#137333', bold=True, size=22, h='CENTER', num='#,##0 "₸"', rowh=44)
+    fmt(r, r + 1, 6, 9, True, bg='#FFD9B8', fg='#B3470B', bold=True, size=22, h='CENTER', num='#,##0 "₸"', rowh=44)
+    row()
+    hr = row('Орын', 'Менеджер', 'Предоплата', 'Оплата бар', 'Толық оплата', 'Ожидается, ₸', 'Факт, ₸', 'Остаток, ₸', 'Лидерге дейін')
+    fmt(hr, hr + 1, 0, NCOL, False, bg=NAVY, fg=WHITE, bold=True, size=11, h='CENTER', rowh=32)
+    first = None
+    top = rank[0][1]['paid_n'] if rank else 0
+    for i, (name, v) in enumerate(rank):
+        rr = row(i + 1, name, v['pre_n'], v['paid_n'], v['full_n'], v['agreed'], v['cash'], v['balance'], max(top - v['paid_n'], 0))
+        first = rr if first is None else first
+        fmt(rr, rr + 1, 0, NCOL, False, bg=(LYEL if i == 0 and v['paid_n'] else WHITE), fg='#1E2D4A', size=12, h='CENTER', rowh=30)
+        fmt(rr, rr + 1, 1, 2, False, bold=True, h='LEFT', bg=(LYEL if i == 0 and v['paid_n'] else WHITE), fg='#1E2D4A', size=12)
+        fmt(rr, rr + 1, 5, 8, False, num='#,##0', bg=(LYEL if i == 0 and v['paid_n'] else WHITE), fg='#1E2D4A', size=12, h='RIGHT')
+        fmt(rr, rr + 1, 6, 7, False, num='#,##0', bold=True, fg='#137333', bg=LGREEN, size=12, h='RIGHT')
+    tr = row('', 'КОМАНДА', tm['pre_n'], tm['paid_n'], tm['full_n'], tm['agreed'], tm['cash'], tm['balance'], '')
+    fmt(tr, tr + 1, 0, NCOL, False, bg=NAVY, fg=WHITE, bold=True, size=12, h='CENTER', rowh=32)
+    fmt(tr, tr + 1, 5, 8, False, num='#,##0', bg=NAVY, fg=WHITE, bold=True, size=12, h='RIGHT')
+    row()
+    r = row('БАҒА БАСПАЛДАҒЫ', '', '', '', 'ҚАЛАЛАР · ОФЛАЙН ПРАКТИКУМ', '', '', '', '')
+    fmt(r, r + 1, 0, 4, True, bg=PANEL, fg='#1E2D4A', bold=True, size=11, h='LEFT')
+    fmt(r, r + 1, 4, NCOL, True, bg=PANEL, fg='#1E2D4A', bold=True, size=11, h='LEFT')
+    off = (c.get('program') or {}).get('offline') or {}
+    cities = list(data['by_city'].items()) or [(k, {'paid_n': 0, 'cash': 0}) for k in off]
+    n = max(len(t['tiers']), len(cities))
+    for i in range(n):
+        tier = t['tiers'][i] if i < len(t['tiers']) else None
+        city = cities[i] if i < len(cities) else None
+        left = f'{money(tier["price"])} ₸ · {_d(tier["from"]):%d.%m}–{_d(tier["to"]):%d.%m}' + ('   ◄ қазір' if tier and i == t['index'] else '') if tier else ''
+        right = (f'{city[0]}: {city[1]["paid_n"]} оплата · {money(city[1]["cash"])} ₸ · практикум {off.get(city[0], "—")}') if city else ''
+        rr = row(left, '', '', '', right, '', '', '', '')
+        fmt(rr, rr + 1, 0, 4, True, bg=(SHEET_GOLD if tier and i == t['index'] else WHITE), fg='#1E2D4A', bold=bool(tier and i == t['index']), size=11, h='LEFT')
+        fmt(rr, rr + 1, 4, NCOL, True, bg=WHITE, fg='#1E2D4A', size=11, h='LEFT')
+    row()
+    r = row(f'Жаңартылды {now:%d.%m.%Y %H:%M} · бот автоматты жаңартады, қолмен өзгертпеңіз')
+    fmt(r, r + 1, 0, NCOL, True, bg=WHITE, fg='#6B7482', size=10, h='LEFT')
+    return G, F
+
+
+def _fmt_request(sid, f):
+    r0, r1, c0, c1, merge, kw = f
+    rng = {'sheetId': sid, 'startRowIndex': r0, 'endRowIndex': r1, 'startColumnIndex': c0, 'endColumnIndex': c1}
+    cell = {'backgroundColor': _rgb(kw.get('bg', WHITE)),
+            'textFormat': {'foregroundColor': _rgb(kw.get('fg', '#1E2D4A')), 'bold': bool(kw.get('bold')), 'fontSize': kw.get('size', 11)},
+            'horizontalAlignment': kw.get('h', 'LEFT'), 'verticalAlignment': 'MIDDLE', 'wrapStrategy': 'CLIP'}
+    if kw.get('num'):
+        cell['numberFormat'] = {'type': 'NUMBER', 'pattern': kw['num']}
+    reqs = [{'repeatCell': {'range': rng, 'cell': {'userEnteredFormat': cell},
+                            'fields': 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy' + (',numberFormat' if kw.get('num') else '') + ')'}}]
+    if merge:
+        reqs.append({'mergeCells': {'range': rng, 'mergeType': 'MERGE_ALL'}})
+    if kw.get('rowh'):
+        reqs.append({'updateDimensionProperties': {'range': {'sheetId': sid, 'dimension': 'ROWS', 'startIndex': r0, 'endIndex': r1},
+                                                   'properties': {'pixelSize': kw['rowh']}, 'fields': 'pixelSize'}})
+    return reqs
+
+
+def sync_sheet(bot, now, data, st, c, force=False):
+    """Кестедегі ТАБЛО парағын жаңартады (жоқ болса жасайды). Қайтарады: True/False."""
+    import hashlib
+    from . import fines
+    sid_book = c['spreadsheet_id']
+    tab = c.get('tablo_tab') or 'ТАБЛО'
+    grid, fmts = build_sheet_grid(data, st, c, now)
+    body = json.dumps(grid, ensure_ascii=False, default=str)
+    sig = hashlib.sha1(body.encode()).hexdigest()
+    last = bot.store.get('lq:tablo') or {}
+    if not force and last.get('sig') == sig and last.get('at') and (now - datetime.fromisoformat(last['at'])).total_seconds() < 1800:
+        return False
+    if not force and last.get('at') and (now - datetime.fromisoformat(last['at'])).total_seconds() < c.get('tablo_every_min', 3) * 60:
+        return False
+    sess = fines._sess()
+    base = f'https://sheets.googleapis.com/v4/spreadsheets/{sid_book}'
+    meta = sess.get(base, params={'fields': 'sheets.properties(sheetId,title)'}, timeout=30)
+    meta.raise_for_status()
+    sheets = {x['properties']['title']: x['properties']['sheetId'] for x in meta.json().get('sheets', [])}
+    created = False
+    if tab not in sheets:
+        add = sess.post(base + ':batchUpdate', json={'requests': [{'addSheet': {'properties': {
+            'title': tab, 'index': 0, 'tabColor': _rgb(SHEET_GOLD), 'gridProperties': {'rowCount': 70, 'columnCount': 12, 'hideGridlines': True}}}}]}, timeout=30)
+        add.raise_for_status()
+        sheets[tab] = add.json()['replies'][0]['addSheet']['properties']['sheetId']
+        created = True
+    sid = sheets[tab]
+    full = {'sheetId': sid, 'startRowIndex': 0, 'endRowIndex': 70, 'startColumnIndex': 0, 'endColumnIndex': 12}
+    reqs = [{'unmergeCells': {'range': full}},
+            {'repeatCell': {'range': full, 'cell': {'userEnteredFormat': {'backgroundColor': _rgb(WHITE), 'textFormat': {'bold': False, 'fontSize': 11}}},
+                            'fields': 'userEnteredFormat(backgroundColor,textFormat)'}},
+            {'updateSheetProperties': {'properties': {'sheetId': sid, 'gridProperties': {'hideGridlines': True}}, 'fields': 'gridProperties.hideGridlines'}}]
+    for i, w in enumerate([70, 160, 90, 110, 120, 140, 140, 140, 150]):
+        reqs.append({'updateDimensionProperties': {'range': {'sheetId': sid, 'dimension': 'COLUMNS', 'startIndex': i, 'endIndex': i + 1},
+                                                   'properties': {'pixelSize': w}, 'fields': 'pixelSize'}})
+    for f in fmts:
+        reqs.extend(_fmt_request(sid, f))
+    q = "'%s'" % tab.replace("'", "''")
+    sess.post(f'{base}/values/{q}!A1:L70:clear', json={}, timeout=30).raise_for_status()
+    sess.put(f'{base}/values/{q}!A1', params={'valueInputOption': 'USER_ENTERED'}, json={'values': grid}, timeout=30).raise_for_status()
+    sess.post(base + ':batchUpdate', json={'requests': reqs}, timeout=30).raise_for_status()
+    bot.store.set('lq:tablo', {'sig': sig, 'at': now.isoformat(), 'created': created})
+    bot.store.set('lq:tablo_err', '')
+    log.info('liquidation sheet tab updated: %s', tab)
+    return True
 
 
 # ---------------------------------------------------------------- ЗП есебі
@@ -707,7 +873,13 @@ def command(bot, now, chat, key, which='/tablo', private_owner=True):
             return bot._reply(key, 'ЗП есебі тек Саяттың ботпен жеке чатында ашылады.', now, chat)
         return bot._reply(key, salary_text(bot, data, c, now), now, chat)
     st = stats(data, c, now)
+    note = ''
     try:
-        _post(bot, chat, render(data, st, c, now), caption('misc', data, st, c))
+        sync_sheet(bot, now, data, st, c, force=True)
+    except Exception as exc:
+        e = str(exc)
+        note = '\n⚠️ Кестедегі ТАБЛО парағы жаңармады' + (': Editor рұқсаты керек' if '403' in e else f' ({type(exc).__name__})')
+    try:
+        _post(bot, chat, render(data, st, c, now), caption('misc', data, st, c) + note)
     except Exception as exc:
         bot._reply(key, 'Сурет жіберілмеді: ' + escape(type(exc).__name__) + '\n' + escape(caption('misc', data, st, c)), now, chat)
