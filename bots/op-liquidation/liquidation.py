@@ -32,6 +32,7 @@ DEFAULTS = {
     'push_at': ['13:00', '17:00', '20:00'],
     'celebrate': True,
     'poll_seconds': 90,
+    'count_blank_paid': True,      # Внесла бос болса да кестедегі әр жолды санау
     'count_mode': 'paid',          # paid: ақша түскен әр студент; full: толық төленгені ғана
     'targets': {},                 # {'Арман': 40} жеке жоспар; болмаса жоспар/команда
     'days': [0, 1, 2, 3, 4, 5, 6],
@@ -170,7 +171,9 @@ def parse(value_ranges, names, today, c):
             mgr = _mgr(row[hm['mop']], names)
             if paid <= 0:
                 out['reserved'] += 1
-                continue
+                if not c.get('count_blank_paid', True):
+                    continue
+                paid = 0                  # кестеге жазылған әр студент оплатаға санала (Внесла бос болса да)
             is_full = (rest <= 0 and agreed > 0) or kind == 'оплата'
             counted = is_full if full_only else True
             day = _date(row[hm['date']], today)

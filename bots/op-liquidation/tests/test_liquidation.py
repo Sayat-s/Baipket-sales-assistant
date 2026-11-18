@@ -68,7 +68,7 @@ class LiquidationTests(unittest.TestCase):
         self._t = tempfile.TemporaryDirectory()
         self.tmp = self._t.name
         self.now = datetime(2026, 11, 18, 14, 0, tzinfo=TZ)
-        self.c = lq.cfg({'liquidation': {'enabled': True, 'spreadsheet_id': 'SID'}})
+        self.c = lq.cfg({'liquidation': {'enabled': True, 'spreadsheet_id': 'SID', 'count_blank_paid': False}})
 
     def tearDown(self):
         self._t.cleanup()
@@ -84,6 +84,11 @@ class LiquidationTests(unittest.TestCase):
         self.assertEqual(d['by_mgr']['Еңлік']['today'], 1)
         self.assertEqual(d['team']['today'], 2)
         self.assertEqual(d['by_day']['2026-11-17'], 2)
+
+    def test_blank_paid_rows_are_counted_by_default(self):
+        d = lq.parse(FIXTURE, TEAM, self.now.date(), dict(self.c, count_blank_paid=True))
+        self.assertEqual(d['team']['paid_n'], 6)           # Внесла бос жол да санала
+        self.assertEqual(d['team']['cash'], 179000 * 3 + 50000 + 170000)
 
     def test_full_mode_counts_only_fully_paid(self):
         d = lq.parse(FIXTURE, TEAM, self.now.date(), dict(self.c, count_mode='full'))
