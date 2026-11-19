@@ -610,6 +610,7 @@ def _fill_saved(bot, c, text, fields, explicit, team, chat, now):
         d['f'].update(add)
         d['written']['cells'] = d['written'].get('cells', []) + [[j, v] for j, v in cells]
         bot.store.set('aq:draft:' + str(chat), dict(d, at=now.isoformat()))
+        _refresh_tablo(bot, c, now)
         _say(bot, chat, f'✅ {escape(w["tab"])}, {w["row"] + 1}-жол толықтырылды: ' + escape(', '.join(str(v) for _, v in cells)), None, now, f'aq:fill:{now:%H%M%S%f}')
     except Exception as exc:
         _say(bot, chat, f'❌ Толықтыру жазылмады ({escape(type(exc).__name__)}).', None, now, f'aq:fillerr:{now:%H%M%S%f}')
@@ -666,6 +667,16 @@ def _present(bot, d, now, chat):
     bot.store.set('aq:draft:' + str(chat), dict(d, at=now.isoformat()))
 
 
+def _refresh_tablo(bot, c, now):
+    """Кестеге жазғаннан кейін таблоны бірден жаңартады (3 минут күтпейді)."""
+    try:
+        data = lq.fetch(bot, now, force=True)
+        if data:
+            lq.sync_sheet(bot, now, data, lq.stats(data, c, now), c, force=True)
+    except Exception as exc:
+        log.info('tablo instant refresh failed: %s', type(exc).__name__)
+
+
 def _save(bot, d, c, now, chat, ack=None):
     tab = d.get('tab')
     did = d['id']
@@ -705,6 +716,7 @@ def _save(bot, d, c, now, chat, ack=None):
             bot.store.set('lq:data', None)
         except Exception:
             pass
+        _refresh_tablo(bot, c, now)
     except Exception as exc:
         d['done'] = None
         bot.store.set('aq:draft:' + str(chat), dict(d, at=now.isoformat()))
@@ -738,6 +750,7 @@ def _undo(bot, d, c, now, chat, ack):
         ack('Қайтарылды')
         _say(bot, chat, f'↩ Қайтарылды: {escape(w["tab"])} парағының {w["row"] + 1}-жолы тазаланды ({len(clear)} ұяшық).', None, now, f'aq:undo:{d["id"]}', d.get('mid'))
         bot.store.set('lq:data', None)
+        _refresh_tablo(bot, c, now)
     except Exception as exc:
         ack('Қайтару сәтсіз')
         _say(bot, chat, f'❌ Қайтару мүмкін болмады ({escape(type(exc).__name__)}). Жолды кестеде қолмен тазалаңыз.', None, now, f'aq:uerr:{d["id"]}')

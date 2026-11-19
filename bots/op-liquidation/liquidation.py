@@ -31,7 +31,7 @@ DEFAULTS = {
     ],
     'push_at': ['13:00', '17:00', '20:00'],
     'celebrate': True,
-    'poll_seconds': 90,
+    'poll_seconds': 30,
     'count_blank_paid': True,      # Внесла бос болса да кестедегі әр жолды санау
     'count_mode': 'paid',          # paid: ақша түскен әр студент; full: толық төленгені ғана
     'targets': {},                 # {'Арман': 40} жеке жоспар; болмаса жоспар/команда
@@ -39,7 +39,7 @@ DEFAULTS = {
     'title': 'ЛИКВИДАЦИЯ',
     'subtitle': 'Senior Marketer',
     'tablo_tab': 'ТАБЛО',
-    'tablo_every_min': 3,
+    'tablo_every_min': 1,
     'program': {
         'offline': {'Астана': '1–6 ақпан', 'Алматы': '15–20 ақпан', 'Шымкент': '22–27 ақпан', 'Ақтау': '8–13 наурыз'},
         'online': 'онлайн доступ 1 желтоқсан – 28 ақпан (3 ай), 197 сабақ',
