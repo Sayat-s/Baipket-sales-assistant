@@ -55,6 +55,10 @@ APP_DAILY_OLD = """        for dkey,dtext,dexp in _dl.due(self.store,self.config
 APP_DAILY_NEW = """        from . import liquidation as _lqd
         for dkey,dtext,dexp in ([] if _lqd.enabled(self.config) else _dl.due(self.store,self.config,self.calendar if self.fresh('calendar',now) else None,now,lambda n:bool(self.user_id(n)))):
 """
+APP_WO_OLD = """        for wkey,wtext,wexp in _wo.due(self,now):
+"""
+APP_WO_NEW = """        for wkey,wtext,wexp in ([] if _lqd.enabled(self.config) else _wo.due(self,now)):
+"""
 APP_PRICES_OLD = """        if command=='/prices':self._reply(key,price_text(self.config,now),now,chat);return
 """
 APP_PRICES_NEW = """        if command=='/prices':
@@ -214,7 +218,7 @@ def patch_config(path, sheet_id):
     c['liquidation']['enabled'] = True
     if sheet_id:
         c['liquidation']['spreadsheet_id'] = sheet_id
-    for k in ('recognition', 'kev', 'reports', 'wins', 'dashboard', 'calendar_hourly'):
+    for k in ('recognition', 'kev', 'reports', 'wins', 'dashboard', 'calendar_hourly', 'report_watch'):
         c.setdefault(k, {})['enabled'] = False
     if isinstance(c.get('owner_report'), dict):
         c['owner_report']['report_times'] = []
@@ -225,7 +229,7 @@ def patch_config(path, sheet_id):
     for p in c.get('team', []):
         p['daily_calls'] = None
     path.write_text(json.dumps(c, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-    print('  + config.json: liquidation қосылды, КЭВ/созвон пуштары өшірілді')
+    print('  + config.json: liquidation қосылды, КЭВ/созвон пуштары, апталық/кешкі созвон есебі, күндік есеп бақылауы өшірілді')
 
 
 def patch_dockerfile(path):
@@ -266,6 +270,7 @@ def main():
     edit(pkg / 'app.py', APP_TICK_OLD, APP_TICK_NEW, '_lq.due(self,now)')
     edit(pkg / 'app.py', APP_CMD_OLD, APP_CMD_NEW, '_lq0.command')
     edit(pkg / 'app.py', APP_DAILY_OLD, APP_DAILY_NEW, '_lqd.enabled')
+    edit(pkg / 'app.py', APP_WO_OLD, APP_WO_NEW, 'else _wo.due')
     edit(pkg / 'app.py', APP_PRICES_OLD, APP_PRICES_NEW, 'prices_text')
     edit(pkg / 'app.py', APP_ZP_OLD, APP_ZP_NEW, "('/tablo','/zp')")
     edit(pkg / 'app.py', APP_MSG_OLD, APP_MSG_NEW, '_aq.handle')
