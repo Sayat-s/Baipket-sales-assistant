@@ -374,12 +374,12 @@ class AutoTests(unittest.TestCase):
         self.assertEqual(len([m for m in self.bot.telegram.msgs if m[0] == 'send']), 1)
 
 
-    def test_missing_extras_block_autowrite_and_followup_fills(self):
+    def test_missing_extras_still_autowrite_and_followup_fills(self):
         short = "1. Аты-жөніңіз: Жүсіпбек Аяулым\n3. Телефон нөміріңіз: 87055802691\n4. Электронды поштаңыз: a@b.kz\n5. Telegram аккаунтыңыз: @swayau\n9. Бағдарламаға қатысу үшін қай қалаға келе аласыз: Астана\nМОП: Олжас\n179000 рассрочка"
         self.send(short)
-        self.assertEqual(self.sess.writes, [])
+        self.assertEqual(self.data['Астана'][1][2], 'Жүсіпбек Аяулым')        # бірден жазылды
         txt = self.bot.telegram.msgs[-1][1]['text']
-        self.assertIn('Бос қалады', txt)
+        self.assertIn('Бос қалды', txt)
         self.assertIn('запрос', txt)
         self.send('Запрос: маркетингті үйрену\nЖасы: 22\nСтатус: смм')
         self.assertEqual(self.data['Астана'][1][17], 'маркетингті үйрену')

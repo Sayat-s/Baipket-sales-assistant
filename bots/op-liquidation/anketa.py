@@ -547,6 +547,8 @@ def handle(bot, msg, text, uid, is_owner, chat, now, key):
         price = None
     fields = parse(text, team, price, _fwd_nick(msg))
     explicit = _explicit(text)
+    if _fill_saved(bot, c, text, fields, explicit, team, chat, now):
+        return True
     draft = _active_draft(bot, chat, now)
     if draft:
         add = {k: v for k, v in fields.items() if k in explicit}
@@ -576,6 +578,41 @@ def handle(bot, msg, text, uid, is_owner, chat, now, key):
     except Exception as exc:
         log.warning('anketa duplicate check failed: %s', type(exc).__name__)
     _present(bot, draft, now, chat)
+    return True
+
+
+def _fill_saved(bot, c, text, fields, explicit, team, chat, now):
+    """Жол жазылып қойған соң келген толықтыруды (Запрос, Жасы…) сол жолдың бос ұяшықтарына қосады."""
+    d = bot.store.get('aq:draft:' + str(chat))
+    if not d or d.get('done') != 'saved' or not d.get('written'):
+        return False
+    try:
+        if now - datetime.fromisoformat(d['at']) > DRAFT_TTL:
+            return False
+    except Exception:
+        return False
+    add = {k: v for k, v in fields.items() if k in explicit and k in ('age', 'city', 'status', 'request', 'email', 'tg', 'source')}
+    if 'age' not in add and not d['f'].get('age') and re.fullmatch(r'\d{2}', text.strip()) and 14 <= int(text.strip()) <= 70:
+        add['age'] = text.strip()
+    if not add or (fields.get('phone') and d['f'].get('phone') and fields['phone'] != d['f']['phone']):
+        return False
+    w = d['written']
+    try:
+        sess = _sess()
+        rows = _read(sess, c['spreadsheet_id'], [w['tab']], 400)[w['tab']]
+        hi, cols = _cols(rows)
+        cells = build_cells(add, rows, cols, w['row'], None, now.date())
+        cells = [(j, v) for j, v in cells if j != cols.get('num')]
+        if not cells:
+            _say(bot, chat, 'ℹ️ Бұл ұяшықтар толтырылған, тиген жоқпын.', None, now, f'aq:fill0:{now:%H%M%S%f}')
+            return True
+        write(sess, c['spreadsheet_id'], w['tab'], w['row'], cells)
+        d['f'].update(add)
+        d['written']['cells'] = d['written'].get('cells', []) + [[j, v] for j, v in cells]
+        bot.store.set('aq:draft:' + str(chat), dict(d, at=now.isoformat()))
+        _say(bot, chat, f'✅ {escape(w["tab"])}, {w["row"] + 1}-жол толықтырылды: ' + escape(', '.join(str(v) for _, v in cells)), None, now, f'aq:fill:{now:%H%M%S%f}')
+    except Exception as exc:
+        _say(bot, chat, f'❌ Толықтыру жазылмады ({escape(type(exc).__name__)}).', None, now, f'aq:fillerr:{now:%H%M%S%f}')
     return True
 
 
@@ -614,7 +651,7 @@ def _present(bot, d, now, chat):
     d['tab'] = tab
     miss = missing(f, tab)
     empty = empty_optional(f)
-    if not miss and not empty and not d.get('dup_hits') and a.get('auto_write', True) and not d.get('done'):
+    if not miss and (not empty or a.get('write_with_empty', True)) and not d.get('dup_hits') and a.get('auto_write', True) and not d.get('done'):
         return _save(bot, d, c, now, chat)
     text = preview(f, tab, d.get('dup_hits') or [], tabs, lq.practicum_text(c, tab) if tab else None)
     if miss:
@@ -657,6 +694,9 @@ def _save(bot, d, c, now, chat, ack=None):
         paid = d['f'].get('paid')
         txt = (f'✅ <b>{escape(tab)}</b>, {row_i + 1}-жол: {escape(str(d["f"].get("fio")))} · МОП {escape(str(d["f"].get("mop")))}'
                + (f' · {lq.money(paid)} ₸' if paid is not None else '') + (f' · {escape(str(d["f"].get("plan")))}' if d['f'].get('plan') else ''))
+        empty = empty_optional(d['f'])
+        if empty and ok:
+            txt += '\n⚠️ Бос қалды: ' + escape(', '.join(empty)) + ' (қаласаңыз жазыңыз, мысалы <code>Запрос: ...</code>)'
         if not ok:
             txt = f'⚠️ Жазу жіберілді, бірақ {escape(tab)} парағының {row_i + 1}-жолын тексере алмадым. Кестені көзбен қараңыз.'
         _say(bot, chat, txt, {'inline_keyboard': [[{'text': '↩ Қайтару (жолды тазалау)', 'callback_data': f'aq:{did}:undo'}]]}, now, f'aq:ok:{did}', d.get('mid'))
